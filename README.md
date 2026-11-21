@@ -14,20 +14,32 @@ A full-stack multiplayer problem-solving game with registration/login, four quiz
 
 ### 1. Start Redis
 
-From the project root:
+From the project root, set the following in the same shell you will use to start the backend. Generate them once per local installation. For persistent deployments, store them in a secret manager, not in source control:
 
 ```bash
+export REDIS_PASSWORD="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+export JWT_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+export REDIS_URL="redis://mindclash:${REDIS_PASSWORD}@127.0.0.1:6379/0"
+docker compose up -d redis
+```
+
+PowerShell equivalent:
+
+```powershell
+$env:REDIS_PASSWORD = python -c "import secrets; print(secrets.token_hex(32))"
+$env:JWT_SECRET = python -c "import secrets; print(secrets.token_hex(32))"
+$env:REDIS_URL = "redis://mindclash:$($env:REDIS_PASSWORD)@127.0.0.1:6379/0"
 docker compose up -d redis
 ```
 
 Check it:
 
 ```bash
-docker compose exec redis redis-cli ping
+docker compose exec redis redis-cli --user mindclash --askpass ping
 # PONG
 ```
 
-If Redis is already installed locally, you can start it with `redis-server` instead.
+Enter the generated Redis password at the prompt. Compose binds Redis to loopback and limits the `mindclash` user to application keys and commands. For remote Redis, use a private network, ACL credentials, and TLS (`rediss://`).
 
 ### 2. Start the backend
 
@@ -39,7 +51,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-The backend expects Redis at `redis://localhost:6379/0` by default. Override with `REDIS_URL` if needed. Set a strong `JWT_SECRET` before deployment.
+The backend requires `REDIS_URL` and `JWT_SECRET`. Rotating the JWT key signs existing users out. Rotate before rollout if an instance ever used the old default key or retained account tokens in WebSocket request logs. The client now requests a single-use, match-specific, 30-second ticket over authenticated HTTP; redact query strings in access logs and use HTTPS/WSS in production.
 
 ### 3. Start the frontend (new terminal)
 
@@ -60,7 +72,7 @@ Open http://localhost:5173. API docs are at http://localhost:8000/docs.
 5. The Redis queue pairs the closest eligible ratings (initial range ±100; it widens as players wait).
 6. Both clients receive match updates over WebSockets. If a WebSocket disconnects, the frontend falls back to HTTP polling.
 
-You can also click **Play practice bot instead** from the matchmaking screen. The built-in practice opponent uses a rating-adjusted solve probability and runs locally without an external model.
+You can also click **Play practice bot instead** from the matchmaking screen. Practice wins, losses and forfeits do not change leaderboard stats. The built-in practice opponent uses a rating-adjusted solve probability and runs locally without an external model.
 
 ## Matchmaking and concurrency notes
 

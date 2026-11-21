@@ -3,8 +3,11 @@ services:
     image: redis:7-alpine
     container_name: mindclash-redis
     ports:
-      - "6379:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--appendonly", "yes", "--user", "default", "off",
+              "--user", "mindclash", "on", ">${REDIS_PASSWORD:?Set REDIS_PASSWORD}", "~mindclash:*",
+              "+ping", "+eval", "+get", "+getdel", "+set", "+del", "+expire", "+hgetall", "+hget",
+              "+hset", "+hdel", "+zrem", "+zscore", "+zadd", "+zrangebyscore"]
     volumes:
       - mindclash-redis-data:/data
  
