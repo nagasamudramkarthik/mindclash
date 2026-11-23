@@ -1,22 +1,35 @@
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from threading import Lock
 from typing import Optional
-import asyncio, os, random, secrets
+import asyncio, base64, json, logging, os, random, secrets
 
+from azure.core.exceptions import AzureError, ResourceExistsError
+from azure.identity import DefaultAzureCredential
+from azure.storage.queue import QueueClient
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Boolean, Text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Boolean, Text, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sqlalchemy import update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 import redis
 from redis.exceptions import RedisError
 
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./mindclash.db')
-engine = create_engine(DATABASE_URL, connect_args={'check_same_thread': False} if DATABASE_URL.startswith('sqlite') else {})
+engine_options = {'connect_args': {'check_same_thread': False}} if DATABASE_URL.startswith('sqlite') else {
+    'connect_args': {'connect_timeout': 8},
+    'pool_pre_ping': True,
+    'pool_size': 3,
+    'max_overflow': 0,
+    'pool_recycle': 1800,
+}
+engine = create_engine(DATABASE_URL, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 SECRET = os.getenv('JWT_SECRET', '').strip()
@@ -71,9 +84,23 @@ class Submission(Base):
     correct=Column(Boolean, default=False)
     created_at=Column(DateTime, default=datetime.utcnow)
 
-Base.metadata.create_all(bind=engine)
 app=FastAPI(title='MindClash API', version='0.1.0')
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv('CORS_ORIGINS','http://localhost:5173').split(','), allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+
+_schema_initialized = False
+_schema_lock = Lock()
+
+def initialize_database():
+    global _schema_initialized
+    if _schema_initialized:
+        return
+    with _schema_lock:
+        if not _schema_initialized:
+            Base.metadata.create_all(bind=engine)
+            _schema_initialized = True
+
+if os.getenv('MINDCLASH_USE_QUEUE_WORKER') != 'true':
+    initialize_database()
 
 class MatchSocketManager:
     def __init__(self):
@@ -150,9 +177,40 @@ return {'', tostring(window), tostring(waited)}
 """
 
 def db():
+    initialize_database()
     s=SessionLocal()
     try: yield s
     finally: s.close()
+
+def enqueue_bot_match(match_id, bot_id, player_rating):
+    queue_name = 'mindclash-bot-matches'
+    connection_string = os.getenv('AzureWebJobsStorage')
+    if connection_string:
+        queue = QueueClient.from_connection_string(connection_string, queue_name)
+        credential = None
+    else:
+        account_name = os.environ['AzureWebJobsStorage__accountName']
+        credential = DefaultAzureCredential()
+        queue = QueueClient(
+            account_url=f'https://{account_name}.queue.core.windows.net',
+            queue_name=queue_name,
+            credential=credential,
+        )
+    try:
+        try:
+            queue.create_queue()
+        except ResourceExistsError:
+            pass
+        message = json.dumps({
+            'match_id': match_id,
+            'bot_id': bot_id,
+            'player_rating': player_rating,
+        }).encode('utf-8')
+        queue.send_message(base64.b64encode(message).decode('ascii'))
+    finally:
+        queue.close()
+        if credential:
+            credential.close()
 
 def token_for(user):
     return jwt.encode({'sub':str(user.id),'exp':datetime.now(timezone.utc)+timedelta(days=7)}, SECRET, algorithm=ALGORITHM)
@@ -233,9 +291,14 @@ def get_match_payload(m,u,s):
 def health():
     try:
         redis_client.ping()
-        return {'status':'ok','redis':'ok'}
+        with engine.connect() as connection:
+            connection.execute(text('SELECT 1'))
+        return {'status':'ok','redis':'ok','database':'ok'}
     except RedisError:
         raise HTTPException(503,'Redis is unavailable')
+    except SQLAlchemyError as exc:
+        logging.exception('Database health check failed')
+        raise HTTPException(503,'Database is unavailable') from exc
 
 @app.post('/auth/register')
 def register(data:RegisterIn,s:Session=Depends(db)):
@@ -322,7 +385,15 @@ async def play_bot(data:QueueIn,u:User=Depends(current_user),s:Session=Depends(d
         s.add(bot); s.commit(); s.refresh(bot)
     m=Match(id=secrets.token_urlsafe(12),player1=u.id,player2=bot.id,arena=arena)
     s.add(m); s.commit(); s.refresh(m)
-    asyncio.create_task(run_bot_match(m.id, bot.id, u.rating))
+    if os.getenv('MINDCLASH_USE_QUEUE_WORKER') == 'true':
+        try:
+            enqueue_bot_match(m.id, bot.id, u.rating)
+        except AzureError as exc:
+            s.delete(m)
+            s.commit()
+            raise HTTPException(503,'Could not start the practice match') from exc
+    else:
+        asyncio.create_task(run_bot_match(m.id, bot.id, u.rating))
     return {'matched':True,'match':get_match_payload(m,u,s),'bot':True}
 
 @app.get('/matches/{match_id}')
@@ -401,6 +472,7 @@ async def match_socket(websocket:WebSocket, match_id:str, ticket:str):
     if value is None:
         await websocket.close(code=4401); return
     uid=int(value)
+    initialize_database()
     session=SessionLocal()
     try:
         m=session.get(Match,match_id)
@@ -459,6 +531,8 @@ async def run_bot_match(match_id, bot_id, player_rating):
                     if m.status=='finished': return
         except Exception:
             session.rollback()
+            logging.exception('Bot match %s failed', match_id)
+            raise
         finally:
             session.close()
 
@@ -468,3 +542,17 @@ def result(match_id:str,u:User=Depends(current_user),s:Session=Depends(db)):
     if not m or u.id not in (m.player1,m.player2): raise HTTPException(404,'Match not found')
     if m.status!='finished': raise HTTPException(409,'Match is still active')
     return {'match':get_match_payload(m,u,s),'winner':user_json(s.get(User,m.winner_id)) if m.winner_id else None,'draw':m.winner_id is None}
+
+STATIC_DIR = Path(__file__).parent / 'static'
+if STATIC_DIR.is_dir():
+    static_root = STATIC_DIR.resolve()
+
+    @app.get('/{asset_path:path}', include_in_schema=False)
+    def serve_frontend(asset_path: str):
+        requested = (static_root / asset_path).resolve()
+        if not requested.is_relative_to(static_root):
+            raise HTTPException(404, 'Not found')
+        target = requested if requested.is_file() else static_root / 'index.html'
+        if not target.is_file():
+            raise HTTPException(404, 'Not found')
+        return FileResponse(target)
