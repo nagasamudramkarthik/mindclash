@@ -73,7 +73,7 @@ class Submission(Base):
 
 Base.metadata.create_all(bind=engine)
 app=FastAPI(title='MindClash API', version='0.1.0')
-app.add_middleware(CORSMiddleware, allow_origins=os.getenv('CORS_ORIGINS','http://localhost:5173').split(','), allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
+app.add_middleware(CORSMiddleware, allow_origins=os.getenv('CORS_ORIGINS','http://localhost:5173,http://127.0.0.1:5173').split(','), allow_credentials=True, allow_methods=['*'], allow_headers=['*'])
 
 class MatchSocketManager:
     def __init__(self):
@@ -109,6 +109,19 @@ local self_id = ARGV[1]
 local rating = tonumber(ARGV[2])
 local now = tonumber(ARGV[3])
 local base_window = tonumber(ARGV[4])
+local reserve_prefix = ARGV[5]
+local reservation = ARGV[6]
+local active_prefix = ARGV[7]
+for i=3,#KEYS,2 do
+  redis.call('ZREM', KEYS[i], self_id)
+  redis.call('HDEL', KEYS[i+1], self_id)
+end
+if redis.call('EXISTS', active_prefix..self_id) == 1 then
+  return {'__ACTIVE__', '0', '0'}
+end
+if redis.call('EXISTS', reserve_prefix..self_id) == 1 then
+  return {'__RESERVED__', '0', '0'}
+end
 local stale_before = now - 600
 local all_times = redis.call('HGETALL', times)
 for i=1,#all_times,2 do
@@ -129,7 +142,7 @@ local best_id = nil
 local best_diff = nil
 for i=1,#candidates,2 do
   local candidate = candidates[i]
-  if candidate ~= self_id then
+  if candidate ~= self_id and redis.call('EXISTS', reserve_prefix..candidate) == 0 and redis.call('EXISTS', active_prefix..candidate) == 0 then
     local diff = math.abs(tonumber(candidates[i+1]) - rating)
     if (not best_diff) or diff < best_diff then
       best_id = candidate
@@ -140,14 +153,109 @@ end
 if best_id then
   redis.call('ZREM', queue, self_id, best_id)
   redis.call('HDEL', times, self_id, best_id)
+  redis.call('SET', reserve_prefix..self_id, reservation, 'EX', 30)
+  redis.call('SET', reserve_prefix..best_id, reservation, 'EX', 30)
+  redis.call('SET', active_prefix..self_id, reservation, 'EX', 30)
+  redis.call('SET', active_prefix..best_id, reservation, 'EX', 30)
   redis.call('SET', 'mindclash:paired:'..self_id, best_id, 'EX', 30)
   redis.call('SET', 'mindclash:paired:'..best_id, self_id, 'EX', 30)
-  return {best_id, tostring(window), tostring(waited)}
+  return {best_id, tostring(window), tostring(waited), reservation}
 end
 redis.call('EXPIRE', queue, 900)
 redis.call('EXPIRE', times, 900)
 return {'', tostring(window), tostring(waited)}
 """
+
+RELEASE_RESERVATIONS_SCRIPT = """
+local reservation = ARGV[1]
+local user_id = ARGV[2]
+local other_id = ARGV[3]
+local user_key = 'mindclash:reserve:'..user_id
+local other_key = 'mindclash:reserve:'..other_id
+if redis.call('GET', user_key) == reservation then redis.call('DEL', user_key) end
+if redis.call('GET', other_key) == reservation then redis.call('DEL', other_key) end
+if redis.call('GET', 'mindclash:paired:'..user_id) == other_id then redis.call('DEL', 'mindclash:paired:'..user_id) end
+if redis.call('GET', 'mindclash:paired:'..other_id) == user_id then redis.call('DEL', 'mindclash:paired:'..other_id) end
+return 1
+"""
+
+MATCH_IDLE_SECONDS = 300
+
+def release_reservations(reservation, user_id, other_id):
+    try:
+        redis_client.eval(RELEASE_RESERVATIONS_SCRIPT, 0, reservation, str(user_id), str(other_id))
+    except RedisError:
+        # Reservations have a short TTL, so a Redis outage cannot leave a permanent lock.
+        pass
+
+def clear_tentative_active(reservation, user_id, other_id):
+    script = """
+    for i=1,2 do
+      local key='mindclash:active:'..ARGV[i]
+      if redis.call('GET', key) == ARGV[3] then redis.call('DEL', key) end
+    end
+    return 1
+    """
+    try:
+        redis_client.eval(script, 0, str(user_id), str(other_id), reservation)
+    except RedisError:
+        pass
+
+def promote_active_markers(reservation, match_id, *user_ids):
+    script = """
+    for i=1,#ARGV-1 do
+      local key='mindclash:active:'..ARGV[i]
+      if redis.call('GET', key) == ARGV[#ARGV-1] then
+        redis.call('SET', key, ARGV[#ARGV], 'EX', 600)
+      end
+    end
+    return 1
+    """
+    try:
+        redis_client.eval(script, 0, *(str(uid) for uid in user_ids), reservation, match_id)
+    except RedisError:
+        pass
+
+def remember_active_match(match_id, *user_ids):
+    try:
+        for uid in user_ids:
+            redis_client.set(f'mindclash:active:{uid}', match_id, ex=600)
+    except RedisError:
+        pass
+
+def clear_active_markers(*user_ids):
+    try:
+        redis_client.delete(*(f'mindclash:active:{uid}' for uid in user_ids))
+    except RedisError:
+        pass
+
+def match_last_activity(m, s):
+    latest_submission = s.query(Submission.created_at).filter(Submission.match_id == m.id).order_by(Submission.created_at.desc()).first()
+    return latest_submission[0] if latest_submission else m.created_at
+
+def expire_idle_match(m, s, requester_id=None):
+    """Forfeit an inactive match after the idle window and apply its result once."""
+    if not m or m.status != 'active':
+        return False
+    last_activity = match_last_activity(m, s)
+    if (datetime.utcnow() - last_activity).total_seconds() < MATCH_IDLE_SECONDS:
+        return False
+    # The player who last submitted gets the win; if neither submitted, the player
+    # making a new matchmaking request is treated as having left the old match.
+    latest = s.query(Submission.user_id).filter(Submission.match_id == m.id).order_by(Submission.created_at.desc()).first()
+    winner_id = latest[0] if latest else (m.player2 if requester_id == m.player1 else (m.player1 if requester_id == m.player2 else None))
+    claimed = s.query(Match).filter(Match.id == m.id, Match.status == 'active').update(
+        {Match.status: 'finished', Match.winner_id: winner_id, Match.finished_at: datetime.utcnow()},
+        synchronize_session=False
+    )
+    if claimed:
+        s.flush(); s.refresh(m)
+        apply_match_result(m, s)
+        s.commit(); s.refresh(m)
+        clear_active_markers(m.player1, m.player2)
+        return True
+    s.rollback()
+    return False
 
 def db():
     s=SessionLocal()
@@ -175,16 +283,48 @@ class AnswerIn(BaseModel): question_index:int; answer:str
 # Answers are deliberately stored server-side. Replace/expand this bank before public launch.
 QUESTIONS={
 'dsa':[
- {'prompt':'What is the time complexity of binary search on a sorted array?','options':['O(1)','O(log n)','O(n)','O(n log n)'],'answer':'O(log n)','explanation':'Each comparison halves the remaining search interval.'},
- {'prompt':'Which data structure is typically used for BFS?','options':['Stack','Queue','Heap','Hash set'],'answer':'Queue','explanation':'BFS explores vertices in first-in, first-out order.'},
- {'prompt':'What is the average-case lookup time in a hash table?','options':['O(log n)','O(n)','O(1)','O(n log n)'],'answer':'O(1)','explanation':'With a good hash function and controlled load factor, lookup is expected constant time.'},
- {'prompt':'Which traversal of a BST returns keys in sorted order?','options':['Preorder','Inorder','Postorder','Level order'],'answer':'Inorder','explanation':'Left, root, right visits BST keys in ascending order.'},
- {'prompt':'Which algorithm finds shortest paths from one source when all edge weights are non-negative?','options':['Dijkstra','Kruskal','DFS','Topological sort'],'answer':'Dijkstra','explanation':'Dijkstra greedily finalizes the closest unsettled vertex.'},
- {'prompt':'What is the worst-case time complexity of merge sort?','options':['O(n)','O(log n)','O(n log n)','O(n²)'],'answer':'O(n log n)','explanation':'There are log n levels, each doing O(n) merging work.'},
- {'prompt':'Which technique is most associated with 0/1 Knapsack?','options':['Dynamic programming','Binary search','BFS','Union-find'],'answer':'Dynamic programming','explanation':'DP tracks best value for each capacity and item prefix.'},
- {'prompt':'What does a disjoint-set union structure support efficiently?','options':['Range minimum','Connectivity queries','String matching','Sorting'],'answer':'Connectivity queries','explanation':'DSU supports find and union operations.'},
- {'prompt':'A min-heap exposes which element at its root?','options':['Largest','Smallest','Most recent','Median'],'answer':'Smallest','explanation':'The min-heap property places the minimum at the root.'},
- {'prompt':'What is the space complexity of an iterative DFS using an explicit stack in the worst case?','options':['O(1)','O(log n)','O(V)','O(V²)'],'answer':'O(V)','explanation':'The stack may hold up to O(V) vertices.'}],
+ {'prompt':'A cache must support lookup, insertion, and removing the least recently used item in O(1). Which combination gives the key operations?','options':['Hash map plus doubly linked list','Min-heap plus array','Binary search tree only','Queue plus stack'],'answer':'Hash map plus doubly linked list','explanation':'The map finds a node instantly; the list moves and removes that node in constant time while keeping recency order.'},
+ {'prompt':'In a word-transformation puzzle, each move changes one letter and every move has equal cost. Which search finds the fewest moves?','options':['BFS from the start word','DFS from the start word','Sort the dictionary','Greedy choose the closest-looking word'],'answer':'BFS from the start word','explanation':'Treat words as graph nodes and one-letter changes as edges. BFS reaches each layer by increasing number of moves.'},
+ {'prompt':'Two lines hold water; moving either line inward shrinks the width. Which line should you move to search for a larger area?','options':['The shorter line','The taller line','Either one at random','Both lines together'],'answer':'The shorter line','explanation':'The shorter height limits the area. Moving the taller side cannot improve that limiting height and only reduces width.'},
+ {'prompt':'Every row and column of a matrix is sorted ascending. How can you search for a target in O(rows + columns)?','options':['Start at the top-right and eliminate a row or column each step','Binary-search every row','Scan the full matrix','Sort all cells again'],'answer':'Start at the top-right and eliminate a row or column each step','explanation':'At the top-right, a value that is too large eliminates its column; one too small eliminates its row.'},
+ {'prompt':'You need to group words that are anagrams of one another. Which key captures the property that matters?','options':['A character-frequency signature','The first character','The original word length only','The reversed word'],'answer':'A character-frequency signature','explanation':'Anagrams have the same count of every character, even when their character order differs.'},
+ {'prompt':'You need to merge K already-sorted lists without scanning all K heads each time. What structure keeps the next choice efficient?','options':['A min-heap containing the current head of each list','A stack for each list','A hash set of all nodes','A max-heap of list lengths'],'answer':'A min-heap containing the current head of each list','explanation':'The smallest current head is the next output. After removing it, add the next value from that same list.'},
+ {'prompt':'A sequence contains positive and negative values. You need its maximum-sum contiguous subarray. What should you keep while scanning once?','options':['The best sum ending at this position and the global best','A sorted copy of all values','The smallest prefix only','A heap of all subarrays'],'answer':'The best sum ending at this position and the global best','explanation':'Either extend the previous best-ending segment or start fresh here; discard a negative prefix that can only hurt future sums.'},
+ {'prompt':'A data structure must support insert, delete, and choosing a random stored item, all in O(1) average time. What is the key combination?','options':['Array plus value-to-index hash map','Balanced tree plus queue','Linked list plus min-heap','Stack plus binary search'],'answer':'Array plus value-to-index hash map','explanation':'The array supports random indexing; the map locates values. Delete by swapping with the last array element and updating its index.'},
+ {'prompt':'An array has n+1 values, each between 1 and n, so at least one value repeats. How can you find a duplicate without modifying the array or using extra space?','options':['Treat each value as a next index and use cycle detection','Sort the array in place','Count values in a hash map','Compare every pair'],'answer':'Treat each value as a next index and use cycle detection','explanation':'The mapping from index to value forms a linked structure; a repeated value creates a cycle, which slow and fast pointers can locate.'},
+ {'prompt':'A binary search tree may be unbalanced. You need the Kth smallest value without storing every value. What traversal idea helps?','options':['Inorder traversal and stop after K nodes','Preorder traversal and sort afterward','Level order and stop at depth K','Reverse inorder and count leaves'],'answer':'Inorder traversal and stop after K nodes','explanation':'Inorder visits BST values in sorted order. An iterative stack lets you stop as soon as the Kth node is visited.'},
+ {'prompt':'A sorted array may contain negative and positive values. How do you find whether two values sum to a target in one pass?','options':['Check every pair','Use two pointers from both ends','Use a sliding window','Sort it again'],'answer':'Use two pointers from both ends','explanation':'The sorted order tells you which pointer to move: too small means move left forward; too large means move right backward.'},
+ {'prompt':'You need the number of contiguous subarrays summing to K; values can be negative. Which idea handles this safely?','options':['Expand a positive-only sliding window','Track prefix sums and their frequencies','Sort the array first','Use a min-heap'],'answer':'Track prefix sums and their frequencies','explanation':'If prefix[j] - prefix[i] = K, that subarray sums to K. A frequency map finds matching earlier prefixes, even with negative values.'},
+ {'prompt':'Find the longest substring with no repeated character. What should a sliding window remember?','options':['The last index of each character','Only the total character count','The smallest character','A sorted copy of the text'],'answer':'The last index of each character','explanation':'When a duplicate appears, jump the window start past that character’s previous index; this keeps the window valid in linear time.'},
+ {'prompt':'A list of time intervals may overlap. What is the key first step for merging them?','options':['Sort by interval start','Sort by interval length','Use a stack in input order','Compare every interval pair'],'answer':'Sort by interval start','explanation':'After sorting starts, any interval that overlaps the current merged interval can be absorbed by extending its end.'},
+ {'prompt':'You need the K most frequent values from a very large list. Which approach avoids sorting every value by frequency?','options':['Keep a size-K min-heap','Use DFS','Use a queue of all values','Use binary search'],'answer':'Keep a size-K min-heap','explanation':'Keep only the best K frequencies seen so far; the heap root is the weakest value that may be replaced.'},
+ {'prompt':'Numbers arrive one at a time, and you must report the Kth largest after each arrival. What is the useful invariant?','options':['A min-heap containing the largest K seen','A max-heap containing every value','A sorted linked list of all values','A stack of the latest K values'],'answer':'A min-heap containing the largest K seen','explanation':'The heap root is the Kth largest: discard values smaller than it and replace the root when a larger value arrives.'},
+ {'prompt':'A linked list may contain a cycle, and you want to detect it without extra memory. Which idea works?','options':['Two pointers moving at different speeds','Sort node values','Store every node in an array','Reverse the list twice'],'answer':'Two pointers moving at different speeds','explanation':'If a cycle exists, the faster pointer eventually laps and meets the slower pointer inside the cycle.'},
+ {'prompt':'When reversing a singly linked list in place, what must you save before changing the current node’s link?','options':['The next node','The list length','The previous node’s value','The tail twice'],'answer':'The next node','explanation':'Save next first; then point current backward. Otherwise the rest of the list becomes unreachable.'},
+ {'prompt':'A graph is unweighted. You need the fewest edges from a source to every reachable vertex. What is the key idea?','options':['Explore in layers with BFS','Use DFS and stop at the first path','Sort the vertices','Use a minimum spanning tree'],'answer':'Explore in layers with BFS','explanation':'BFS visits vertices by distance in edges, so the first visit to a vertex is a shortest path.'},
+ {'prompt':'A grid contains islands made of adjacent land cells. What is the simplest way to count connected islands?','options':['Flood-fill each unvisited land cell','Sort all cells by row','Use binary search on the grid','Run Dijkstra from every cell'],'answer':'Flood-fill each unvisited land cell','explanation':'Each DFS or BFS marks one whole connected component; the number of starts is the number of islands.'},
+ {'prompt':'Courses have prerequisite relationships. How can you tell whether all courses can be completed?','options':['Topologically process zero-indegree courses','Run Dijkstra from course zero','Sort by course number','Use a stack of all edges'],'answer':'Topologically process zero-indegree courses','explanation':'Repeatedly remove courses with no remaining prerequisites. If some remain, they are trapped in a cycle.'},
+ {'prompt':'You need to detect a cycle in a directed graph during DFS. What state is essential?','options':['A recursion-stack or three-color state','Only the parent vertex','The shortest distance so far','The degree of each node only'],'answer':'A recursion-stack or three-color state','explanation':'An edge to a node currently on the DFS path closes a directed cycle; a merely visited node may be finished already.'},
+ {'prompt':'A network changes as edges are added, and you repeatedly ask whether two nodes are connected. Which structure fits?','options':['Disjoint-set union','A binary search tree','A monotonic queue','A prefix-sum array'],'answer':'Disjoint-set union','explanation':'Union joins components and find checks their representatives; path compression and union by size make these operations nearly constant amortized time.'},
+ {'prompt':'An array stays fixed while you answer many range-sum queries. What should you precompute?','options':['Prefix sums','A heap of values','A graph of indices','A stack of suffixes'],'answer':'Prefix sums','explanation':'The sum from L to R is prefix[R+1] - prefix[L], so each query takes constant time after linear preprocessing.'},
+ {'prompt':'You must add a value to many ranges, then read the final array once. What technique makes the updates efficient?','options':['Difference array','Segment tree with lazy propagation only','BFS','Binary search'],'answer':'Difference array','explanation':'Record +value at the range start and -value just after its end; one prefix pass applies all range updates.'},
+ {'prompt':'A stream asks for the maximum in every window of width K. Which structure keeps the work linear?','options':['A decreasing deque of candidate indices','A min-heap of all values','A sorted list rebuilt per window','A stack of window sums'],'answer':'A decreasing deque of candidate indices','explanation':'Remove expired indices from the front and smaller values from the back; the front is always the window maximum.'},
+ {'prompt':'For each daily temperature, find how many days until a warmer day. What pattern is useful?','options':['A monotonic decreasing stack of unresolved days','A queue sorted by temperature','A prefix sum','A union-find structure'],'answer':'A monotonic decreasing stack of unresolved days','explanation':'A warmer temperature resolves earlier cooler days at the top of the stack, each index entering and leaving once.'},
+ {'prompt':'You can attend as many non-overlapping events as possible. What greedy choice is safe?','options':['Choose the event that ends earliest','Choose the event that starts earliest','Choose the longest event','Choose the event with the most attendees'],'answer':'Choose the event that ends earliest','explanation':'Finishing earliest leaves the most remaining time for future events; repeat among events that start after it ends.'},
+ {'prompt':'You need the minimum number of rooms for overlapping meetings. After sorting by start time, what should a min-heap track?','options':['The end time of each occupied room','The start time of each meeting','All meeting durations in descending order','The room with the fewest meetings'],'answer':'The end time of each occupied room','explanation':'Reuse the room that becomes free earliest if its end is no later than the next start; otherwise allocate another room.'},
+ {'prompt':'A problem asks for the smallest capacity that can ship packages within D days. What clue suggests binary search on the answer?','options':['Feasibility changes monotonically as capacity increases','The input is already sorted','The answer must be a graph node','Every choice is independent'],'answer':'Feasibility changes monotonically as capacity increases','explanation':'If capacity C works, every larger capacity also works. Binary-search the boundary and use a greedy check for each candidate.'},
+ {'prompt':'In 0/1 knapsack, each item can be used at most once. What prevents a one-dimensional DP from reusing the same item?','options':['Iterate capacities downward','Iterate capacities upward','Sort items by weight','Use BFS over values'],'answer':'Iterate capacities downward','explanation':'Descending capacity reads states from before the current item update, so the item cannot feed into itself more than once.'},
+ {'prompt':'For the longest increasing subsequence, what does the tails array represent in the O(n log n) method?','options':['Smallest ending value for each subsequence length','The actual subsequence in final order','The number of smaller values to the left','The largest value seen at each index'],'answer':'Smallest ending value for each subsequence length','explanation':'Smaller tails leave more room to extend. Binary search finds which length the current value can improve.'},
+ {'prompt':'You need the minimum number of coins to make an amount, with reusable coin values. Why is dynamic programming a natural fit?','options':['Each amount depends on smaller amounts','The coins arrive in sorted order','A greedy choice is always optimal','The state is a graph cycle'],'answer':'Each amount depends on smaller amounts','explanation':'For amount A, try each coin c and use best[A-c] + 1. Repeated subamounts are reused instead of recomputed.'},
+ {'prompt':'Find the longest palindromic substring. What observation gives a simple O(n²) approach?','options':['Every palindrome expands around a center','Palindromes are sorted lexicographically','Only even-length strings matter','A hash table stores all substrings'],'answer':'Every palindrome expands around a center','explanation':'Try each character and each gap as a center, then expand while the ends match; there are only O(n) centers.'},
+ {'prompt':'A dictionary contains many words, and queries ask whether any word starts with a prefix. Which structure matches the query shape?','options':['Trie','Heap','Disjoint-set union','Fenwick tree'],'answer':'Trie','explanation':'A trie shares common prefixes, so prefix lookup follows only the characters in the query.'},
+ {'prompt':'You need the number of inversions in an array: pairs i < j where A[i] > A[j]. Which strategy achieves O(n log n)?','options':['Count cross pairs while merging','Compare every pair','Use a sliding window','Build a maximum spanning tree'],'answer':'Count cross pairs during merge sort','explanation':'When a right-half value is smaller than the current left value, it forms inversions with all remaining left-half values.'},
+ {'prompt':'A tree question asks for the lowest common ancestor of two nodes. What recursive result makes the solution work?','options':['Return a found target upward; combine left and right results','Return the deeper node immediately','Sort all node values','Run BFS from every leaf'],'answer':'Return a found target upward; combine left and right results','explanation':'If one target is found in each subtree, the current node is their first shared ancestor; otherwise propagate the one-sided result.'},
+ {'prompt':'You need to validate whether a sequence could be a BST preorder traversal. What useful bound-based idea avoids rebuilding the tree?','options':['Track the allowed value range as traversal advances','Sort the sequence and compare it','Use a queue by levels','Count duplicate values'],'answer':'Track the allowed value range as traversal advances','explanation':'Each move into a right subtree raises a lower bound; any later value below it violates the BST ordering.'},
+ {'prompt':'A problem asks for the shortest path with some negative edge weights but no negative cycle. Which algorithmic idea handles this?','options':['Repeatedly relax every edge','Use ordinary BFS','Use Dijkstra without changes','Use a minimum spanning tree'],'answer':'Repeatedly relax every edge','explanation':'Bellman-Ford lets improvements propagate across up to V-1 edges and can also detect a negative cycle with one extra pass.'},
+ {'prompt':'A recursive search explores combinations, but many branches cannot reach the target. What should you add?','options':['Pruning using a bound that proves a branch cannot help','A larger recursion depth','A sort after every choice','A queue of all possible answers'],'answer':'Pruning using a bound that proves a branch cannot help','explanation':'Backtracking is efficient when you stop exploring as soon as the partial choice cannot produce a valid or better answer.'},
+ {'prompt':'A network has capacities on its edges, and you need the maximum amount that can flow from a source to a sink. Which idea reveals the bottleneck?','options':['Build flow through augmenting paths in a residual graph','Use shortest paths on the original graph only','Choose the highest-capacity edge greedily','Topologically sort the vertices'],'answer':'Build flow through augmenting paths in a residual graph','explanation':'Residual edges show where flow can still be increased or rerouted; when no augmenting path remains, max-flow equals the capacity of a minimum cut.'},
+ {'prompt':'A Boolean formula is made of clauses with two literals each. What graph insight can determine whether it is satisfiable?','options':['Build an implication graph and inspect strongly connected components','Use a minimum spanning tree','Try every assignment with no pruning','Run Dijkstra from each variable'],'answer':'Build an implication graph and inspect strongly connected components','explanation':'For 2-SAT, a variable and its negation in the same strongly connected component imply contradictory reachability, so no assignment can satisfy the formula.'}],
 'probability':[
  {'prompt':'A fair coin is tossed twice. What is the probability of exactly one head?','options':['1/4','1/2','3/4','1'],'answer':'1/2','explanation':'HT and TH are 2 of the 4 equally likely outcomes.'},
  {'prompt':'A fair six-sided die is rolled. What is the probability of getting a prime number?','options':['1/3','1/2','2/3','5/6'],'answer':'1/2','explanation':'The prime faces are 2, 3 and 5: three of six.'},
@@ -221,12 +361,54 @@ QUESTIONS={
 }
 ARENAS=set(QUESTIONS.keys())
 
+DSA_DIFFICULTIES=[7,5,4,3,1,6,3,7,8,4,2,6,4,3,4,4,3,1,1,2,4,5,5,1,5,6,5,4,5,6,7,8,5,4,3,7,7,9,9,6,9,10]
+if len(DSA_DIFFICULTIES) != len(QUESTIONS['dsa']):
+    raise RuntimeError('Every DSA question must have a difficulty rating')
+for question, difficulty in zip(QUESTIONS['dsa'], DSA_DIFFICULTIES):
+    question['difficulty']=difficulty
+
+def difficulty_for_rating(rating):
+    """Map Elo to a 1-10 question level; a new 1000-rated player starts at level 3."""
+    level=3+int((rating-1000+75)//150)
+    return max(1,min(10,level))
+
+def questions_for_match(m, rating):
+    questions=QUESTIONS[m.arena]
+    if m.arena == 'dsa' and len(questions) > 10:
+        # Take the closest difficulty levels first. The match seed keeps the set and
+        # order identical for both players without adding question storage to the DB.
+        target=difficulty_for_rating(rating)
+        rng=random.Random(f'{m.id}:{target}')
+        by_level={level:[] for level in range(1,11)}
+        for question in questions:
+            by_level[question['difficulty']].append(question)
+        for group in by_level.values():
+            rng.shuffle(group)
+        levels=list(by_level)
+        rng.shuffle(levels)
+        levels.sort(key=lambda level:abs(level-target))
+        selected=[]
+        for level in levels:
+            selected.extend(by_level[level][:10-len(selected)])
+            if len(selected)==10:
+                break
+        return selected
+    return questions
+
+def question_rating_for_match(player1, player2):
+    if player1.username == 'MindClash_AI':
+        return player2.rating
+    if player2.username == 'MindClash_AI':
+        return player1.rating
+    return (player1.rating+player2.rating)/2
+
 def user_json(u): return {'id':u.id,'username':u.username,'rating':u.rating,'wins':u.wins,'losses':u.losses,'matches':u.wins+u.losses}
 def get_match_payload(m,u,s):
     opponent=s.get(User, m.player2 if u.id==m.player1 else m.player1)
     mine=m.score1 if u.id==m.player1 else m.score2
     theirs=m.score2 if u.id==m.player1 else m.score1
-    qs=QUESTIONS[m.arena]
+    match_rating=question_rating_for_match(u, opponent)
+    qs=questions_for_match(m, match_rating)
     return {'id':m.id,'arena':m.arena,'status':m.status,'score':mine,'opponent_score':theirs,'opponent':user_json(opponent),'question_index':m.current_question,'total_questions':10,'question':{k:v for k,v in qs[m.current_question].items() if k!='answer' and k!='explanation'} if m.status=='active' and m.current_question<10 else None,'winner_id':m.winner_id}
 
 @app.get('/health')
@@ -263,25 +445,37 @@ def join_queue(data:QueueIn,u:User=Depends(current_user),s:Session=Depends(db)):
     arena=data.arena.lower()
     if arena not in ARENAS: raise HTTPException(400,'Unknown arena')
     active=s.query(Match).filter(Match.status=='active', (Match.player1==u.id)|(Match.player2==u.id)).first()
-    if active: return {'matched':True,'match':get_match_payload(active,u,s)}
+    if active:
+        if not expire_idle_match(active, s, u.id):
+            remember_active_match(active.id, u.id)
+            return {'matched':True,'match':get_match_payload(active,u,s)}
     try:
-        for other_arena in ARENAS:
-            if other_arena != arena:
-                redis_client.zrem(f'mindclash:queue:{other_arena}',str(u.id))
-                redis_client.hdel(f'mindclash:queued_at:{other_arena}',str(u.id))
         paired_with=redis_client.get(f'mindclash:paired:{u.id}')
         if paired_with:
             pending=s.query(Match).filter(Match.status=='active', (Match.player1==u.id)|(Match.player2==u.id)).first()
             if pending: return {'matched':True,'match':get_match_payload(pending,u,s)}
             return {'matched':False,'message':'Opponent found; preparing your match…'}
-        result=redis_client.eval(PAIR_SCRIPT, 2, f'mindclash:queue:{arena}', f'mindclash:queued_at:{arena}', str(u.id), str(u.rating), str(int(datetime.now(timezone.utc).timestamp())), '100')
+        reservation=secrets.token_urlsafe(18)
+        other_keys=[]
+        for other_arena in ARENAS:
+            if other_arena != arena:
+                other_keys.extend([f'mindclash:queue:{other_arena}', f'mindclash:queued_at:{other_arena}'])
+        result=redis_client.eval(PAIR_SCRIPT, 2+len(other_keys), f'mindclash:queue:{arena}', f'mindclash:queued_at:{arena}', *other_keys, str(u.id), str(u.rating), str(int(datetime.now(timezone.utc).timestamp())), '100', 'mindclash:reserve:', reservation, 'mindclash:active:')
     except RedisError:
         raise HTTPException(503,'Matchmaking is temporarily unavailable. Start Redis and retry.')
     opponent_id=result[0]
+    if opponent_id == '__ACTIVE__':
+        active=s.query(Match).filter(Match.status=='active', (Match.player1==u.id)|(Match.player2==u.id)).first()
+        if active: return {'matched':True,'match':get_match_payload(active,u,s)}
+        return {'matched':False,'message':'Preparing your match…'}
+    if opponent_id == '__RESERVED__':
+        return {'matched':False,'message':'Preparing your match…'}
     if not opponent_id:
         return {'matched':False,'message':'Searching for a similarly rated opponent','rating_window':int(result[1]),'waiting_seconds':int(result[2])}
     opponent=s.get(User,int(opponent_id))
     if not opponent:
+        clear_tentative_active(result[3], u.id, opponent_id)
+        release_reservations(result[3], u.id, opponent_id)
         return {'matched':False,'message':'Opponent disconnected; keep searching'}
     # Redis has already claimed both queue entries atomically. The database stores the match.
     m=Match(id=secrets.token_urlsafe(12),player1=u.id,player2=opponent.id,arena=arena)
@@ -290,7 +484,11 @@ def join_queue(data:QueueIn,u:User=Depends(current_user),s:Session=Depends(db)):
         s.commit(); s.refresh(m)
     except Exception:
         s.rollback()
+        clear_tentative_active(result[3], u.id, opponent.id)
+        release_reservations(result[3], u.id, opponent.id)
         raise HTTPException(503,'Could not create the match. Please search again.')
+    promote_active_markers(result[3], m.id, u.id, opponent.id)
+    release_reservations(result[3], u.id, opponent.id)
     return {'matched':True,'match':get_match_payload(m,u,s)}
 
 @app.post('/matchmaking/leave')
@@ -309,19 +507,38 @@ async def play_bot(data:QueueIn,u:User=Depends(current_user),s:Session=Depends(d
     arena=data.arena.lower()
     if arena not in ARENAS: raise HTTPException(400,'Unknown arena')
     active=s.query(Match).filter(Match.status=='active', (Match.player1==u.id)|(Match.player2==u.id)).first()
-    if active: return {'matched':True,'match':get_match_payload(active,u,s)}
+    if active:
+        if not expire_idle_match(active, s, u.id):
+            remember_active_match(active.id, u.id)
+            return {'matched':True,'match':get_match_payload(active,u,s)}
+    reservation=secrets.token_urlsafe(18)
     try:
+        if not redis_client.set(f'mindclash:reserve:{u.id}', reservation, nx=True, ex=30):
+            active=s.query(Match).filter(Match.status=='active', (Match.player1==u.id)|(Match.player2==u.id)).first()
+            if active: return {'matched':True,'match':get_match_payload(active,u,s)}
+            raise HTTPException(409,'Another matchmaking request is being prepared. Please retry.')
+        redis_client.set(f'mindclash:active:{u.id}', reservation, ex=30)
         for queued_arena in ARENAS:
             redis_client.zrem(f'mindclash:queue:{queued_arena}',str(u.id))
             redis_client.hdel(f'mindclash:queued_at:{queued_arena}',str(u.id))
     except RedisError:
+        clear_tentative_active(reservation, u.id, u.id)
+        release_reservations(reservation, u.id, u.id)
         raise HTTPException(503,'Matchmaking service is unavailable')
-    bot=s.query(User).filter_by(username='MindClash_AI').first()
-    if not bot:
-        bot=User(username='MindClash_AI',email='mindclash-ai@local.invalid',password_hash=pwd.hash(secrets.token_urlsafe(32)))
-        s.add(bot); s.commit(); s.refresh(bot)
-    m=Match(id=secrets.token_urlsafe(12),player1=u.id,player2=bot.id,arena=arena)
-    s.add(m); s.commit(); s.refresh(m)
+    try:
+        bot=s.query(User).filter_by(username='MindClash_AI').first()
+        if not bot:
+            bot=User(username='MindClash_AI',email='mindclash-ai@local.invalid',password_hash=pwd.hash(secrets.token_urlsafe(32)))
+            s.add(bot); s.flush()
+        m=Match(id=secrets.token_urlsafe(12),player1=u.id,player2=bot.id,arena=arena)
+        s.add(m); s.commit(); s.refresh(m)
+    except Exception:
+        s.rollback()
+        clear_tentative_active(reservation, u.id, u.id)
+        release_reservations(reservation, u.id, u.id)
+        raise HTTPException(503,'Could not create the practice match. Please retry.')
+    promote_active_markers(reservation, m.id, u.id)
+    release_reservations(reservation, u.id, u.id)
     asyncio.create_task(run_bot_match(m.id, bot.id, u.rating))
     return {'matched':True,'match':get_match_payload(m,u,s),'bot':True}
 
@@ -329,15 +546,17 @@ async def play_bot(data:QueueIn,u:User=Depends(current_user),s:Session=Depends(d
 def match_state(match_id:str,u:User=Depends(current_user),s:Session=Depends(db)):
     m=s.get(Match,match_id)
     if not m or u.id not in (m.player1,m.player2): raise HTTPException(404,'Match not found')
+    if expire_idle_match(m, s):
+        clear_active_markers(m.player1, m.player2)
     return get_match_payload(m,u,s)
 
 def apply_match_result(m, s):
-    """Apply one Elo update and win/loss increment for a completed match."""
+    """Apply Elo only to human matches, and update the completed match's record."""
     p1=s.get(User,m.player1); p2=s.get(User,m.player2)
+    actual1=1.0 if m.winner_id==m.player1 else (0.0 if m.winner_id==m.player2 else 0.5)
     if 'MindClash_AI' in (p1.username,p2.username):
         return
     expected1=1/(1+10**((p2.rating-p1.rating)/400))
-    actual1=1.0 if m.winner_id==m.player1 else (0.0 if m.winner_id==m.player2 else 0.5)
     delta=round(32*(actual1-expected1))
     p1.rating+=delta; p2.rating-=delta
     if actual1==1.0: p1.wins+=1; p2.losses+=1
@@ -374,6 +593,7 @@ async def forfeit_match(match_id:str,u:User=Depends(current_user),s:Session=Depe
             s.expire(m); s.refresh(m)
             apply_match_result(m,s)
             s.commit(); s.refresh(m)
+            clear_active_markers(m.player1, m.player2)
             await manager.publish(m,s)
         else:
             s.rollback()
@@ -409,7 +629,14 @@ async def match_socket(websocket:WebSocket, match_id:str, ticket:str):
         await manager.connect(match_id,uid,websocket)
         await websocket.send_json({'type':'match_update','match':get_match_payload(m,session.get(User,uid),session)})
         while True:
-            await websocket.receive_text()  # client may send ping frames as text
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30)
+            except asyncio.TimeoutError:
+                m=session.get(Match,match_id)
+                if expire_idle_match(m, session):
+                    clear_active_markers(m.player1, m.player2)
+                    await manager.publish(m, session)
+                    return
     except WebSocketDisconnect:
         manager.disconnect(match_id,websocket)
     finally:
@@ -419,10 +646,17 @@ async def match_socket(websocket:WebSocket, match_id:str, ticket:str):
 async def submit_answer(match_id:str,data:AnswerIn,u:User=Depends(current_user),s:Session=Depends(db)):
     m=s.get(Match,match_id)
     if not m or u.id not in (m.player1,m.player2): raise HTTPException(404,'Match not found')
+    if expire_idle_match(m, s, u.id):
+        clear_active_markers(m.player1, m.player2)
+        await manager.publish(m, s)
+        raise HTTPException(409,'Match ended after five minutes without activity')
     if m.status!='active': raise HTTPException(409,'Match has ended')
     if data.question_index!=m.current_question: raise HTTPException(409,'This question is no longer active')
     if data.question_index < 0 or data.question_index >= 10: raise HTTPException(400,'Invalid question index')
-    correct=data.answer.strip().casefold()==QUESTIONS[m.arena][m.current_question]['answer'].casefold()
+    player1=s.get(User,m.player1); player2=s.get(User,m.player2)
+    match_rating=question_rating_for_match(player1, player2)
+    qs=questions_for_match(m, match_rating)
+    correct=data.answer.strip().casefold()==qs[m.current_question]['answer'].casefold()
     s.add(Submission(match_id=match_id,user_id=u.id,question_index=data.question_index,answer=data.answer[:500],correct=correct))
     if correct:
         # Conditional UPDATE is the atomic claim: only one correct submission can advance a question.
@@ -431,12 +665,15 @@ async def submit_answer(match_id:str,data:AnswerIn,u:User=Depends(current_user),
         if result:
             s.flush(); s.refresh(m); finish_match_if_needed(m,s)
             s.commit(); s.refresh(m)
+            if m.status=='finished': clear_active_markers(m.player1, m.player2)
+            else: remember_active_match(m.id, m.player1, m.player2)
             await manager.publish(m,s)
-            return {'correct':True,'message':'Correct! You claimed the point.','match':get_match_payload(m,u,s),'explanation':QUESTIONS[m.arena][data.question_index]['explanation']}
+            return {'correct':True,'message':'Correct! You claimed the point.','match':get_match_payload(m,u,s),'explanation':qs[data.question_index]['explanation']}
         s.rollback()
         m=s.get(Match,match_id)
         return {'correct':True,'message':'Correct, but your opponent claimed this question first.','match':get_match_payload(m,u,s)}
     s.commit()
+    remember_active_match(m.id, m.player1, m.player2)
     return {'correct':False,'message':'Not quite. Try again!','match':get_match_payload(m,u,s)}
 
 async def run_bot_match(match_id, bot_id, player_rating):
@@ -448,6 +685,10 @@ async def run_bot_match(match_id, bot_id, player_rating):
         try:
             m=session.get(Match,match_id)
             if not m or m.status!='active': return
+            if expire_idle_match(m, session):
+                clear_active_markers(m.player1, m.player2)
+                await manager.publish(m, session)
+                return
             question_index=m.current_question
             if random.random() <= accuracy:
                 score_col=Match.score2 if m.player2==bot_id else Match.score1
@@ -455,6 +696,8 @@ async def run_bot_match(match_id, bot_id, player_rating):
                 if claimed:
                     session.flush(); session.refresh(m); finish_match_if_needed(m,session)
                     session.commit(); session.refresh(m)
+                    if m.status=='finished': clear_active_markers(m.player1, m.player2)
+                    else: remember_active_match(m.id, m.player1, m.player2)
                     await manager.publish(m,session)
                     if m.status=='finished': return
         except Exception:

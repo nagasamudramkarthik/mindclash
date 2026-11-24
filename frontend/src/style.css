@@ -5,3 +5,118 @@
 
 .game-controls{display:flex;align-items:center;gap:14px}.quit-btn{border:1px solid #7f343d;background:#321a22;color:#fca5a5;padding:9px 13px;border-radius:9px;font-size:11px;font-weight:800;cursor:pointer}.quit-btn:hover{background:#4a202b;border-color:#ef4444}.quit-btn:disabled{opacity:.5;cursor:not-allowed}.option.incorrect{border-color:#ef4444;background:#451d25;color:#fecaca;box-shadow:0 0 0 1px #ef444455}.option.incorrect input{accent-color:#ef4444}
 @media(max-width:650px){.game-controls{gap:8px;flex-direction:column;align-items:flex-end}.quit-btn{padding:7px 10px}}
+
+/* Motion system: quick, calm transitions between arena states. */
+html{scroll-behavior:smooth}
+button,.arena-card,.option,.nav,.iconbtn{transition:transform .22s cubic-bezier(.2,.8,.2,1),border-color .22s ease,background-color .22s ease,filter .22s ease,box-shadow .22s ease}
+button:focus-visible,input:focus-visible{outline:2px solid #c4b5fd;outline-offset:3px}
+.app-loading{opacity:0;transform:translateY(10px) scale(.992)}
+.app-revealed{animation:appReveal .72s cubic-bezier(.2,.75,.25,1) both}
+@keyframes appReveal{from{opacity:0;transform:translateY(12px) scale(.992);filter:blur(4px)}to{opacity:1;transform:none;filter:blur(0)}}
+.topbar{animation:headerReveal .7s .12s both}
+@keyframes headerReveal{from{opacity:0;transform:translateY(-9px)}to{opacity:1;transform:none}}
+.arena-card{transition:transform .28s cubic-bezier(.2,.8,.2,1),border-color .25s ease,box-shadow .25s ease}
+.arena-card:hover{transform:translateY(-5px);border-color:#6552a2;box-shadow:0 18px 40px #0005,0 0 26px #8b5cf61c}
+.arena-card:hover .arena-icon{transform:translateY(-2px) rotate(-4deg)}
+.battle-btn:hover{gap:13px;color:#e4dafe}
+.option:hover{transform:translateY(-2px);border-color:#7362aa}
+.primary:hover,.secondary:hover{transform:translateY(-2px)}
+.hero>*{animation:riseIn .65s both}
+.hero>*:nth-child(2){animation-delay:.06s}.hero>*:nth-child(3){animation-delay:.13s}.hero>*:nth-child(4){animation-delay:.2s}.hero>*:nth-child(5){animation-delay:.27s}
+@keyframes riseIn{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:none}}
+
+/* First-load MindClash reveal. */
+.intro-screen{position:fixed;z-index:1000;inset:0;display:grid;place-items:center;overflow:hidden;background:radial-gradient(ellipse at 50% 45%,#211b3d 0,#111323 36%,#080a13 78%);color:#f7f5ff;animation:introFade .55s 1.35s ease both}
+.intro-stars{position:absolute;inset:-50%;opacity:.35;background-image:radial-gradient(1px 1px at 10% 20%,#fff 99%,transparent),radial-gradient(1px 1px at 75% 14%,#c4b5fd 99%,transparent),radial-gradient(1px 1px at 36% 78%,#fff 99%,transparent),radial-gradient(2px 2px at 89% 69%,#67e8f9 99%,transparent),radial-gradient(1px 1px at 61% 46%,#fff 99%,transparent);background-size:420px 390px;animation:starDrift 18s linear infinite}
+.intro-halo{position:absolute;width:min(70vw,680px);aspect-ratio:1;border-radius:50%;border:1px solid #a78bfa12;box-shadow:inset 0 0 100px #8b5cf60c,0 0 90px #8b5cf60a;animation:haloPulse 3.2s ease-in-out infinite}
+.halo-two{width:min(54vw,500px);border-color:#67e8f914;animation-delay:.8s}
+.intro-content{position:relative;display:flex;align-items:center;flex-direction:column;animation:introRise .8s cubic-bezier(.15,.8,.25,1) both}
+.intro-emblem{width:112px;height:112px;display:grid;place-items:center;position:relative;margin-bottom:24px;color:#e9ddff}
+.emblem-ring{position:absolute;inset:0;border:1px solid #b39aff66;border-radius:32px;transform:rotate(45deg);animation:emblemSpin 8s linear infinite;box-shadow:0 0 34px #8b5cf629,inset 0 0 25px #8b5cf612}
+.emblem-ring:after{content:"";position:absolute;width:7px;height:7px;top:-4px;left:calc(50% - 3px);border-radius:50%;background:#c4b5fd;box-shadow:0 0 14px 4px #a78bfa}
+.ring-inner{inset:13px;border-color:#67e8f933;border-radius:26px;animation-direction:reverse;animation-duration:12s}
+.emblem-icon{width:70px;height:70px;border-radius:23px;background:linear-gradient(145deg,#8b5cf6,#3b65bd 75%);display:grid;place-items:center;box-shadow:0 0 36px #8b5cf65c,0 12px 32px #0008;animation:emblemBeat 1.7s ease-in-out infinite}
+.intro-wordmark{font-size:clamp(34px,7vw,48px);font-weight:800;letter-spacing:-2.8px;animation:wordReveal .85s .12s both}
+.intro-wordmark span{color:#b9a2ff}
+.intro-caption{margin-top:7px;color:#9ba0b8;font:10px 'DM Mono',monospace;letter-spacing:3.2px;animation:wordReveal .8s .25s both}
+.intro-progress{height:2px;width:150px;margin-top:31px;border-radius:4px;background:#ffffff18;overflow:hidden}
+.intro-progress span{display:block;width:40%;height:100%;border-radius:4px;background:linear-gradient(90deg,#8b5cf6,#67e8f9);box-shadow:0 0 12px #9c8aff;animation:loadingSweep 1.25s ease-in-out infinite}
+.intro-status{margin-top:12px;color:#707790;font:9px 'DM Mono',monospace;letter-spacing:2px;animation:statusGlow 1.4s ease-in-out infinite}
+.intro-coordinate{position:absolute;right:30px;bottom:25px;color:#6d7188;font:10px 'DM Mono',monospace;letter-spacing:1.5px}
+@keyframes introFade{to{opacity:0;visibility:hidden;transform:scale(1.025)}}
+@keyframes introRise{from{opacity:0;transform:translateY(18px) scale(.96);filter:blur(8px)}to{opacity:1;transform:none;filter:blur(0)}}
+@keyframes wordReveal{from{opacity:0;transform:translateY(12px);letter-spacing:4px}to{opacity:1;transform:none}}
+@keyframes emblemSpin{to{transform:rotate(405deg)}}
+@keyframes emblemBeat{50%{transform:scale(1.055);box-shadow:0 0 52px #8b5cf688,0 12px 32px #0008}}
+@keyframes haloPulse{50%{transform:scale(1.06);opacity:.55}}
+@keyframes starDrift{to{transform:translate3d(6%,3%,0) rotate(8deg)}}
+@keyframes loadingSweep{0%{transform:translateX(-110%)}100%{transform:translateX(270%)}}
+@keyframes statusGlow{50%{color:#c4b5fd}}
+
+/* Searching and match-found clash sequence. */
+.queue-arena{position:relative;isolation:isolate;overflow:hidden;max-width:570px;margin:65px auto 90px;padding:34px 34px 30px;background:radial-gradient(ellipse at 50% 36%,#25203d 0,#131625 58%);border-color:#40365e;box-shadow:0 24px 80px #0005,0 0 55px #7858d414;animation:queueEnter .65s cubic-bezier(.2,.8,.25,1) both}
+.queue-arena:before,.queue-arena:after{content:"";position:absolute;z-index:-1;width:230px;height:230px;border-radius:50%;filter:blur(65px);opacity:.18;pointer-events:none}
+.queue-arena:before{background:#8b5cf6;left:-135px;top:80px;animation:sideGlow 3s ease-in-out infinite alternate}
+.queue-arena:after{background:#22d3ee;right:-140px;top:70px;animation:sideGlow 3s 1s ease-in-out infinite alternate-reverse}
+.queue-heading .eyebrow{justify-content:center;font-size:9px}
+.queue-heading h2{font-size:31px;margin:13px 0 4px}
+.queue-heading .muted{margin:0}
+.queue-faceoff{display:grid;grid-template-columns:1fr 80px 1fr;align-items:center;margin:32px 0 19px;position:relative}
+.queue-fighter{display:grid;justify-items:center;gap:8px;position:relative;z-index:1}
+.queue-fighter b{font-size:12px}.queue-fighter>span{font:9px 'DM Mono',monospace;letter-spacing:1.3px;color:#858ba2}
+.queue-orbit{width:84px;height:84px;display:grid;place-items:center;border:1px solid #a78bfa42;border-radius:50%;position:relative;animation:orbitPulse 2.5s ease-in-out infinite}
+.queue-orbit:before,.queue-orbit:after{content:"";position:absolute;inset:8px;border:1px solid #67e8f929;border-radius:50%;animation:orbitPulse 2.5s .4s ease-in-out infinite}
+.queue-orbit:after{inset:-6px;border-style:dashed;border-color:#b9a2ff38;animation:emblemSpin 18s linear infinite}
+.queue-orbit .avatar,.unknown-rival{width:48px;height:48px;border-radius:16px;font-size:19px;box-shadow:0 0 25px #8b5cf638}
+.unknown-rival{display:grid;place-items:center;color:#c4b5fd;background:linear-gradient(145deg,#302448,#151a2a);border:1px solid #aa91ff44;animation:rivalFlicker 1.8s ease-in-out infinite}
+.queue-energy{display:flex;align-items:center;justify-content:center;gap:0;color:#d8caff}
+.queue-energy i{height:1px;width:27px;background:linear-gradient(90deg,transparent,#b6a0ff);animation:energyLine 1.25s ease-in-out infinite alternate}
+.queue-energy i:last-child{transform:rotate(180deg)}
+.queue-energy strong{font:800 15px 'DM Mono';padding:0 5px;text-shadow:0 0 16px #a78bfa}
+.queue-arena .search-status{margin:20px 0 17px;color:#d1c5ff}
+.queue-arena .queue-actions{position:relative;z-index:2}
+@keyframes queueEnter{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes orbitPulse{50%{transform:scale(1.06);box-shadow:0 0 28px #8b5cf629}}
+@keyframes energyLine{to{opacity:.25;transform:scaleX(.35)}}
+@keyframes rivalFlicker{50%{filter:brightness(1.35);box-shadow:0 0 34px #a78bfa5c}}
+@keyframes sideGlow{to{transform:scale(1.35);opacity:.3}}
+
+.clash-stage{min-height:calc(100vh - 160px);max-width:920px;margin:0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;isolation:isolate;overflow:hidden;text-align:center;padding:55px 20px 70px;animation:stageReveal .5s ease both}
+.clash-grid{position:absolute;z-index:-2;inset:0;opacity:.32;background:linear-gradient(#7360a50e 1px,transparent 1px),linear-gradient(90deg,#7360a50e 1px,transparent 1px);background-size:42px 42px;mask-image:radial-gradient(ellipse at center,#000 10%,transparent 78%);animation:gridDrift 12s linear infinite}
+.clash-stage:before{content:"";position:absolute;z-index:-1;width:min(62vw,560px);aspect-ratio:1;top:50%;left:50%;transform:translate(-50%,-48%);border-radius:50%;background:radial-gradient(circle,#8b5cf620 0,transparent 65%);animation:stagePulse 2.8s ease-in-out infinite}
+.clash-kicker{display:flex;align-items:center;gap:9px;color:#b9a2ff;font:10px 'DM Mono',monospace;letter-spacing:2.2px;animation:riseIn .45s both}
+.clash-stage h1{font-size:clamp(42px,8vw,78px);line-height:.93;letter-spacing:-4px;margin:20px 0 38px;font-weight:800;text-shadow:0 10px 45px #0008;animation:titleImpact .7s cubic-bezier(.16,1,.3,1) both}
+.clash-stage h1 small{display:block;margin-top:13px;color:#8c91a9;font:10px 'DM Mono',monospace;letter-spacing:5px}
+.clash-faceoff{width:min(100%,750px);display:grid;grid-template-columns:1fr 150px 1fr;align-items:center;position:relative}
+.clash-player{display:flex;align-items:center;flex-direction:column;gap:8px;position:relative;z-index:1}
+.clash-player>span{color:#a8a0c6;font:9px 'DM Mono',monospace;letter-spacing:2px}
+.clash-player>b{font-size:clamp(15px,2vw,19px);max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.clash-player>small{font:9px 'DM Mono',monospace;color:#80869d;letter-spacing:1px}
+.clash-avatar{width:82px;height:82px;display:grid;place-items:center;border-radius:25px;background:linear-gradient(145deg,#7c5be0,#245887);border:1px solid #c3b4ff65;color:white;font-size:28px;font-weight:800;box-shadow:0 0 34px #8b5cf64a,0 18px 45px #0007;animation:avatarPop .72s .1s cubic-bezier(.16,1,.3,1) both}
+.rival-avatar{background:linear-gradient(145deg,#b14d76,#8e5b1d);border-color:#ffc78b66;box-shadow:0 0 34px #f973164a,0 18px 45px #0007}
+.clash-left{animation:enterLeft .72s cubic-bezier(.16,1,.3,1) both}
+.clash-right{animation:enterRight .72s cubic-bezier(.16,1,.3,1) both}
+.clash-core{height:150px;width:150px;display:grid;place-items:center;position:relative;margin:0 auto}
+.core-orbit{position:absolute;inset:14px;border:1px solid #b39aff44;border-radius:50%;animation:coreSpin 3.4s linear infinite}
+.orbit-a{inset:2px;border-color:#a78bfa66;border-style:dashed;animation-duration:7s}
+.orbit-b{inset:22px;border-color:#67e8f955;animation-direction:reverse;animation-duration:2.5s}
+.orbit-c{inset:34px;border-color:#f0abfc44;border-style:dotted;animation-duration:1.6s}
+.core-flash{width:58px;height:58px;display:grid;place-items:center;border:1px solid #cbb8ff99;border-radius:20px;background:radial-gradient(circle at 35% 25%,#b9a2ff,#6840bd 75%);box-shadow:0 0 25px #a78bfa99,0 0 75px #7c3aed55;color:white;animation:coreStrike .85s .15s cubic-bezier(.16,1,.3,1) both}
+.clash-core>span{position:absolute;bottom:-3px;color:#c4b5fd;font:800 10px 'DM Mono';letter-spacing:3px;text-shadow:0 0 12px #a78bfa}
+.clash-sync{display:flex;align-items:center;gap:13px;margin-top:36px;color:#9197ae}
+.clash-sync p{margin:0;font:9px 'DM Mono',monospace;letter-spacing:2px;text-transform:uppercase;animation:statusGlow 1.3s ease-in-out infinite}
+.clash-sync span{width:28px;height:1px;background:linear-gradient(90deg,transparent,#a78bfa)}
+.clash-sync span:last-child{transform:rotate(180deg)}
+.question-meta .difficulty-tag{padding:5px 8px;border:1px solid #8b5cf642;border-radius:20px;background:#8b5cf616;color:#d4c6ff;font:9px 'DM Mono',monospace;letter-spacing:.8px}
+@keyframes stageReveal{from{opacity:0;filter:blur(6px)}to{opacity:1;filter:none}}
+@keyframes titleImpact{0%{opacity:0;transform:scale(1.12);filter:blur(8px)}65%{opacity:1;transform:scale(.97)}100%{transform:none}}
+@keyframes enterLeft{from{opacity:0;transform:translateX(-65px)}to{opacity:1;transform:none}}
+@keyframes enterRight{from{opacity:0;transform:translateX(65px)}to{opacity:1;transform:none}}
+@keyframes avatarPop{from{opacity:0;transform:scale(.6) rotate(-10deg)}to{opacity:1;transform:none}}
+@keyframes coreSpin{to{transform:rotate(360deg)}}
+@keyframes coreStrike{0%{opacity:0;transform:scale(.2) rotate(-35deg);filter:brightness(2)}70%{opacity:1;transform:scale(1.2) rotate(8deg)}100%{transform:scale(1)}}
+@keyframes stagePulse{50%{opacity:.45;transform:translate(-50%,-48%) scale(1.13)}}
+@keyframes gridDrift{to{background-position:42px 42px}}
+
+@media(max-width:650px){.intro-coordinate{right:17px;bottom:16px}.intro-emblem{width:92px;height:92px}.emblem-icon{width:60px;height:60px}.intro-caption{letter-spacing:2px}.queue-arena{margin:42px auto 60px;padding:28px 18px 24px}.queue-faceoff{grid-template-columns:1fr 58px 1fr;gap:2px}.queue-orbit{width:72px;height:72px}.queue-fighter b{font-size:11px}.queue-fighter>span{font-size:8px;letter-spacing:.8px}.queue-energy i{width:15px}.clash-stage{min-height:calc(100vh - 145px);padding:40px 7px 55px}.clash-stage h1{letter-spacing:-2px;margin:18px 0 32px}.clash-faceoff{grid-template-columns:1fr 90px 1fr}.clash-core{width:90px;height:120px}.core-flash{width:48px;height:48px;border-radius:16px}.clash-avatar{width:68px;height:68px;border-radius:21px}.clash-player>span{font-size:8px;letter-spacing:1.2px}.clash-player>b{font-size:13px}.clash-player>small{font-size:8px}.clash-sync{margin-top:31px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}.intro-screen{animation:none}.app-loading{opacity:1;transform:none}}
