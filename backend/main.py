@@ -358,7 +358,11 @@ QUESTIONS={
  {'prompt':'You need the longest palindromic substring in linear time. Which stronger technique reuses information from earlier centers?','options':['Maintain the rightmost known palindrome and mirror radii around its center','Try every substring independently','Sort characters by frequency','Use BFS over all substrings'],'answer':'Maintain the rightmost known palindrome and mirror radii around its center','explanation':'Manacher’s method initializes a new center from its mirrored radius inside the current boundary, then expands only beyond known territory.'},
  {'prompt':'Every value appears twice except one, and the values can be XORed. Why does XOR reveal the single value?','options':['Equal pairs cancel because x XOR x is zero','XOR sorts values by size','The largest value always remains','XOR counts how many values are odd'],'answer':'Equal pairs cancel because x XOR x is zero','explanation':'XOR is associative and commutative, so all duplicate pairs cancel and leave the unpaired value.'},
  {'prompt':'You need to generate every subset of a small set of n items. What does each n-bit mask represent?','options':['Which items are included in one subset','The sorted order of all items','A path through a graph','The frequency of each item'],'answer':'Which items are included in one subset','explanation':'Each bit independently records whether its item is present, giving one mask for each of the 2^n subsets.'},
- {'prompt':'You need all unique triples summing to a target in an array. After sorting and fixing one value, what reduces the search?','options':['Use two pointers and skip equal values after recording a triple','Try every remaining triple with three loops','Use a stack of prefixes','Binary-search every possible pair separately'],'answer':'Use two pointers and skip equal values after recording a triple','explanation':'Sorted order lets the left or right pointer move according to whether the sum is too small or too large; skipping duplicates avoids repeated triples.'}
+ {'prompt':'You need all unique triples summing to a target in an array. After sorting and fixing one value, what reduces the search?','options':['Use two pointers and skip equal values after recording a triple','Try every remaining triple with three loops','Use a stack of prefixes','Binary-search every possible pair separately'],'answer':'Use two pointers and skip equal values after recording a triple','explanation':'Sorted order lets the left or right pointer move according to whether the sum is too small or too large; skipping duplicates avoids repeated triples.'},
+ {'prompt':'A segment tree must support adding a value to every element in a range and answering range-sum queries. What avoids touching every element during an update?','options':['Store deferred updates on covered tree nodes and push them down only when needed','Rebuild every prefix sum after each update','Sort the updated range','Use a separate hash map for each index'],'answer':'Store deferred updates on covered tree nodes and push them down only when needed','explanation':'Lazy propagation records an update on a fully covered segment and applies it to children later, keeping range operations logarithmic.'},
+ {'prompt':'You need to find all strongly connected components of a directed graph in linear time. Which strategy is suitable?','options':['Use DFS finishing order and a second DFS on the reversed graph','Run Dijkstra from every vertex','Sort edges by weight','Use a single BFS from an arbitrary vertex'],'answer':'Use DFS finishing order and a second DFS on the reversed graph','explanation':'Kosaraju’s method uses finishing order to choose safe starts in the reversed graph, visiting each vertex and edge only a constant number of times.'},
+ {'prompt':'You need the maximum number of internally vertex-disjoint paths between two vertices. How can you use a standard max-flow algorithm?','options':['Split each intermediate vertex into in/out nodes joined by capacity 1','Give every edge capacity equal to its weight','Run BFS and count all paths','Contract every vertex into one node'],'answer':'Split each intermediate vertex into in/out nodes joined by capacity 1','explanation':'The capacity-one edge limits how many paths can pass through each intermediate vertex; ordinary max flow then finds the maximum number of disjoint paths.'},
+ {'prompt':'A graph changes over time as edges are added and removed, and connectivity is queried after each change. What offline technique handles this efficiently?','options':['Place edge lifetimes in a segment tree over time and use a rollback disjoint-set structure','Rebuild connected components from scratch for every query','Use Dijkstra after every update','Sort vertices once and never update them'],'answer':'Place edge lifetimes in a segment tree over time and use a rollback disjoint-set structure','explanation':'The segment tree groups active intervals; rollback DSU restores earlier component states while traversing time ranges.'}
 ],
 'probability':[
  {'prompt':'A fair coin is tossed twice. What is the probability of exactly one head?','options':['1/4','1/2','3/4','1'],'answer':'1/2','explanation':'HT and TH are 2 of the 4 equally likely outcomes.'},
@@ -429,7 +433,7 @@ QUESTIONS={
 ARENAS=set(QUESTIONS.keys())
 
 DSA_DIFFICULTIES=[7,5,4,3,1,6,3,7,8,4,2,6,4,3,4,4,3,1,1,2,4,5,5,1,5,6,5,4,5,6,7,8,5,4,3,7,7,9,9,6,9,10,
-                  3,4,4,1,3,3,3,2,4,5,5,6,6,5,7,6,5,3,3,7,5,9,6,7,7,6,8,3,4,4]
+                  3,4,4,1,3,3,3,2,4,5,5,6,6,5,7,6,5,3,3,7,5,9,6,7,7,6,8,3,4,4,8,8,9,10]
 if len(DSA_DIFFICULTIES) != len(QUESTIONS['dsa']):
     raise RuntimeError('Every DSA question must have a difficulty rating')
 for question, difficulty in zip(QUESTIONS['dsa'], DSA_DIFFICULTIES):
@@ -447,25 +451,9 @@ def questions_for_match(m, rating):
     rng=random.Random(f'{m.id}:{m.arena}')
     if m.arena == 'dsa' and len(questions) > 10:
         target=difficulty_for_rating(rating)
-        by_level={level:[] for level in range(1,11)}
-        for question in questions:
-            by_level[question['difficulty']].append(question)
-        for group in by_level.values():
-            rng.shuffle(group)
-        selected=[]
-        levels=sorted(by_level, key=lambda level:abs(level-target))
-        index=0
-        while len(selected)<10 and index<len(levels):
-            distance=abs(levels[index]-target)
-            nearest=[]
-            while index<len(levels) and abs(levels[index]-target)==distance:
-                nearest.append(levels[index]); index+=1
-            rng.shuffle(nearest)
-            for level in nearest:
-                selected.extend(by_level[level][:10-len(selected)])
-                if len(selected)==10:
-                    break
-        questions=selected
+        low=max(1,target-2); high=min(10,target+2)
+        nearby=[question for question in questions if low<=question['difficulty']<=high]
+        questions=rng.sample(nearby,10)
     else:
         questions=list(questions)
     rng.shuffle(questions)
