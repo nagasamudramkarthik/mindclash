@@ -322,13 +322,44 @@ QUESTIONS={
  {'prompt':'You need the minimum number of coins to make an amount, with reusable coin values. Why is dynamic programming a natural fit?','options':['Each amount depends on smaller amounts','The coins arrive in sorted order','A greedy choice is always optimal','The state is a graph cycle'],'answer':'Each amount depends on smaller amounts','explanation':'For amount A, try each coin c and use best[A-c] + 1. Repeated subamounts are reused instead of recomputed.'},
  {'prompt':'Find the longest palindromic substring. What observation gives a simple O(n²) approach?','options':['Every palindrome expands around a center','Palindromes are sorted lexicographically','Only even-length strings matter','A hash table stores all substrings'],'answer':'Every palindrome expands around a center','explanation':'Try each character and each gap as a center, then expand while the ends match; there are only O(n) centers.'},
  {'prompt':'A dictionary contains many words, and queries ask whether any word starts with a prefix. Which structure matches the query shape?','options':['Trie','Heap','Disjoint-set union','Fenwick tree'],'answer':'Trie','explanation':'A trie shares common prefixes, so prefix lookup follows only the characters in the query.'},
- {'prompt':'You need the number of inversions in an array: pairs i < j where A[i] > A[j]. Which strategy achieves O(n log n)?','options':['Count cross pairs while merging','Compare every pair','Use a sliding window','Build a maximum spanning tree'],'answer':'Count cross pairs during merge sort','explanation':'When a right-half value is smaller than the current left value, it forms inversions with all remaining left-half values.'},
+ {'prompt':'You need the number of inversions in an array: pairs i < j where A[i] > A[j]. Which strategy achieves O(n log n)?','options':['Count cross pairs during merge sort','Compare every pair','Use a sliding window','Build a maximum spanning tree'],'answer':'Count cross pairs during merge sort','explanation':'When a right-half value is smaller than the current left value, it forms inversions with all remaining left-half values.'},
  {'prompt':'A tree question asks for the lowest common ancestor of two nodes. What recursive result makes the solution work?','options':['Return a found target upward; combine left and right results','Return the deeper node immediately','Sort all node values','Run BFS from every leaf'],'answer':'Return a found target upward; combine left and right results','explanation':'If one target is found in each subtree, the current node is their first shared ancestor; otherwise propagate the one-sided result.'},
  {'prompt':'You need to validate whether a sequence could be a BST preorder traversal. What useful bound-based idea avoids rebuilding the tree?','options':['Track the allowed value range as traversal advances','Sort the sequence and compare it','Use a queue by levels','Count duplicate values'],'answer':'Track the allowed value range as traversal advances','explanation':'Each move into a right subtree raises a lower bound; any later value below it violates the BST ordering.'},
  {'prompt':'A problem asks for the shortest path with some negative edge weights but no negative cycle. Which algorithmic idea handles this?','options':['Repeatedly relax every edge','Use ordinary BFS','Use Dijkstra without changes','Use a minimum spanning tree'],'answer':'Repeatedly relax every edge','explanation':'Bellman-Ford lets improvements propagate across up to V-1 edges and can also detect a negative cycle with one extra pass.'},
  {'prompt':'A recursive search explores combinations, but many branches cannot reach the target. What should you add?','options':['Pruning using a bound that proves a branch cannot help','A larger recursion depth','A sort after every choice','A queue of all possible answers'],'answer':'Pruning using a bound that proves a branch cannot help','explanation':'Backtracking is efficient when you stop exploring as soon as the partial choice cannot produce a valid or better answer.'},
  {'prompt':'A network has capacities on its edges, and you need the maximum amount that can flow from a source to a sink. Which idea reveals the bottleneck?','options':['Build flow through augmenting paths in a residual graph','Use shortest paths on the original graph only','Choose the highest-capacity edge greedily','Topologically sort the vertices'],'answer':'Build flow through augmenting paths in a residual graph','explanation':'Residual edges show where flow can still be increased or rerouted; when no augmenting path remains, max-flow equals the capacity of a minimum cut.'},
- {'prompt':'A Boolean formula is made of clauses with two literals each. What graph insight can determine whether it is satisfiable?','options':['Build an implication graph and inspect strongly connected components','Use a minimum spanning tree','Try every assignment with no pruning','Run Dijkstra from each variable'],'answer':'Build an implication graph and inspect strongly connected components','explanation':'For 2-SAT, a variable and its negation in the same strongly connected component imply contradictory reachability, so no assignment can satisfy the formula.'}],
+ {'prompt':'A Boolean formula is made of clauses with two literals each. What graph insight can determine whether it is satisfiable?','options':['Build an implication graph and inspect strongly connected components','Use a minimum spanning tree','Try every assignment with no pruning','Run Dijkstra from each variable'],'answer':'Build an implication graph and inspect strongly connected components','explanation':'For 2-SAT, a variable and its negation in the same strongly connected component imply contradictory reachability, so no assignment can satisfy the formula.'},
+ {'prompt':'In a sorted array, you need the first position whose value is at least a target. What binary-search invariant helps?','options':['Keep the boundary between values below the target and values at least the target','Search only for an exact match','Move left whenever the middle is larger','Check every element in order'],'answer':'Keep the boundary between values below the target and values at least the target','explanation':'Lower-bound search narrows the first index that satisfies a monotonic condition, even when the target is absent.'},
+ {'prompt':'A sorted array has been rotated, and all values are distinct. How can you still search in logarithmic time?','options':['At each step identify the sorted half, then decide whether the target lies inside it','Sort a copy before searching','Use a sliding window','Scan outward from the midpoint'],'answer':'At each step identify the sorted half, then decide whether the target lies inside it','explanation':'At least one half around the midpoint remains sorted; its range tells you which half can be discarded.'},
+ {'prompt':'A sorted array contains duplicates. You need the first and last index of a target in O(log n). What should you do?','options':['Run lower-bound and upper-bound searches','Stop at the first exact match','Use a hash set','Scan from both ends until they meet'],'answer':'Run lower-bound and upper-bound searches','explanation':'Two boundary searches find the first value not less than the target and the first value greater than it.'},
+ {'prompt':'An expression contains brackets of several types. How can you detect whether they close in the right order?','options':['Push opening brackets onto a stack and match each closer with the top','Count opening and closing brackets only','Sort all brackets by type','Use a queue of opening brackets'],'answer':'Push opening brackets onto a stack and match each closer with the top','explanation':'The most recently opened bracket must close first, which is exactly the last-in, first-out rule of a stack.'},
+ {'prompt':'A stack must support push, pop, and retrieving its minimum in O(1). What extra information is useful?','options':['Store the minimum so far alongside each pushed value','Keep all values in a sorted array','Re-scan the stack after every operation','Use a queue instead'],'answer':'Store the minimum so far alongside each pushed value','explanation':'Each entry can remember the smallest value beneath and including it, so popping restores the previous minimum immediately.'},
+ {'prompt':'You need to implement a FIFO queue using stacks. Which transfer rule preserves queue order?','options':['Move items to the output stack only when it is empty','Move every item after each enqueue','Always pop from the input stack','Sort the two stacks after each operation'],'answer':'Move items to the output stack only when it is empty','explanation':'Reversing the input stack once makes its oldest item the output stack top; leaving it there amortizes each item to O(1) moves.'},
+ {'prompt':'A tree should be visited one depth level at a time. Which traversal naturally does this?','options':['BFS with a queue','DFS with a stack only','Inorder traversal','Binary search'],'answer':'BFS with a queue','explanation':'A queue processes nodes in arrival order, so all nodes at one depth are handled before the next depth.'},
+ {'prompt':'You need the maximum number of nodes on a root-to-leaf path. What recursive relationship captures tree height?','options':['One plus the larger child height','The sum of all node values','The smaller child height only','The number of leaves'],'answer':'One plus the larger child height','explanation':'A deepest path continues through the taller child, adding one edge or node for the current root.'},
+ {'prompt':'A binary tree must be checked for height balance at every node. How can you avoid recalculating heights repeatedly?','options':['Return height and balance status together in one postorder traversal','Run a full height search from every node','Sort the node values','Check only the root children'],'answer':'Return height and balance status together in one postorder traversal','explanation':'Each subtree reports its height once; its parent can compare child heights and propagate an unbalanced result upward.'},
+ {'prompt':'An undirected graph must be split into two groups so every edge crosses groups. What traversal can check this?','options':['Color neighbors with opposite colors using BFS or DFS','Sort vertices by degree','Run Dijkstra from every vertex','Build a minimum spanning tree'],'answer':'Color neighbors with opposite colors using BFS or DFS','explanation':'A conflict occurs if an edge joins two vertices assigned the same color; that means the graph contains an odd cycle.'},
+ {'prompt':'You need a deep copy of a graph that may contain cycles. What prevents infinite recursion and duplicate copies?','options':['Record each original-to-copy mapping before visiting its neighbors','Copy only leaf vertices','Sort neighbors before copying','Use a queue without a visited map'],'answer':'Record each original-to-copy mapping before visiting its neighbors','explanation':'The map both reuses an existing copy when a cycle returns and ensures each original vertex is copied once.'},
+ {'prompt':'A weighted graph has only nonnegative edge costs. Which method finds shortest distances from one start efficiently?','options':['Repeatedly finalize the unsettled vertex with the smallest known distance','Use BFS regardless of edge weights','Choose the largest edge first','Topologically sort every graph'],'answer':'Repeatedly finalize the unsettled vertex with the smallest known distance','explanation':'With nonnegative edges, a smallest tentative distance cannot later be improved; a min-priority queue makes the selection efficient.'},
+ {'prompt':'You need a minimum-cost set of edges connecting every vertex in an undirected weighted graph. What is the key idea behind Kruskal’s method?','options':['Add edges from lightest to heaviest, skipping ones that close a cycle','Always choose the next edge touching the source','Take the heaviest edge from each component','Run shortest paths from every vertex'],'answer':'Add edges from lightest to heaviest, skipping ones that close a cycle','explanation':'A disjoint-set structure detects whether an edge joins different components; safe edges are added until all vertices connect.'},
+ {'prompt':'A trie stores words and you need to know how many stored words share a prefix. What should each trie node maintain?','options':['A count of words passing through that node','The full sorted word list','The longest word in the whole trie','A hash of every suffix'],'answer':'A count of words passing through that node','explanation':'Incrementing path counts during insertion lets a prefix query return its matching-word count when traversal reaches that node.'},
+ {'prompt':'A pattern contains a wildcard that can match any sequence of characters. Which approach handles repeated overlapping choices safely?','options':['Dynamic programming over text and pattern positions','Greedy matching without backtracking or saved state','Sort the text characters','Use a stack of distinct characters'],'answer':'Dynamic programming over text and pattern positions','explanation':'Each state records whether a text prefix matches a pattern prefix; a wildcard can either consume nothing or another character.'},
+ {'prompt':'You need the minimum edits to turn one word into another using insert, delete, and replace. What does a DP cell represent?','options':['The minimum edits between prefixes ending at those two positions','The number of matching letters anywhere','The longest word in the dictionary','The cost of sorting both words'],'answer':'The minimum edits between prefixes ending at those two positions','explanation':'The last operation is an insertion, deletion, or replacement, so each cell depends on neighboring prefix states.'},
+ {'prompt':'A string must be split into valid dictionary words. What dynamic-programming state makes the decision manageable?','options':['Whether each prefix can be segmented into dictionary words','The most frequent character so far','The sorted order of dictionary entries','The longest dictionary word only'],'answer':'Whether each prefix can be segmented into dictionary words','explanation':'A prefix is segmentable if some earlier segmentable boundary is followed by a dictionary word ending here.'},
+ {'prompt':'Houses in a row have values, and adjacent houses cannot both be chosen. What state is enough while scanning left to right?','options':['Best total using the previous house or skipping it','A sorted list of all house values','The number of houses remaining','The last two chosen house values only'],'answer':'Best total using the previous house or skipping it','explanation':'For each house, compare taking its value plus the best result two positions back against skipping it.'},
+ {'prompt':'A robot moves only right or down through a grid with blocked cells. How can you count valid routes without listing them?','options':['Store the number of ways to reach each cell from its top and left neighbors','Run DFS and keep every full path','Sort the grid by cell value','Use a max-heap of coordinates'],'answer':'Store the number of ways to reach each cell from its top and left neighbors','explanation':'Every route into a cell arrives from above or from the left; blocked cells contribute zero ways.'},
+ {'prompt':'Each job has a value and a start/end time. You want the maximum total value from non-overlapping jobs. What strategy fits?','options':['Sort by finish time and use DP with the last compatible job','Always choose the shortest job','Choose jobs by highest value alone','Use a queue in input order'],'answer':'Sort by finish time and use DP with the last compatible job','explanation':'For each job, compare skipping it with taking its value plus the best compatible schedule found before it.'},
+ {'prompt':'You need the Kth largest item in an unsorted array but do not need the whole array sorted. What can reduce average work?','options':['Partition around a pivot and continue only on the side containing rank K','Use merge sort on every value','Run binary search on array indices','Build every possible subset'],'answer':'Partition around a pivot and continue only on the side containing rank K','explanation':'Quickselect places a pivot in its final rank, then discards the irrelevant partition instead of sorting both sides.'},
+ {'prompt':'Two sorted arrays are too large to merge, and you need their combined median in logarithmic time. What is the key idea?','options':['Binary-search a partition where left-side values do not exceed right-side values','Scan both arrays until reaching the middle','Sort the concatenated arrays','Use a hash map of values'],'answer':'Binary-search a partition where left-side values do not exceed right-side values','explanation':'A valid partition puts half the elements on each side and lets boundary values determine the median.'},
+ {'prompt':'You need range-sum queries and point updates on an array. Which compact structure supports both in logarithmic time?','options':['Fenwick tree over partial prefix sums','A plain prefix-sum array with no updates','A stack of values','A sorted copy of the array'],'answer':'Fenwick tree over partial prefix sums','explanation':'Each tree position summarizes a range determined by its lowest set bit, so an update and a prefix query touch only logarithmically many ranges.'},
+ {'prompt':'An array receives point updates and range-minimum queries. What structure stores summaries for reusable intervals?','options':['Segment tree','A single prefix sum','A queue of updates','A trie'],'answer':'Segment tree','explanation':'Each internal node combines summaries of its two child intervals; an update refreshes one path and a query visits only relevant intervals.'},
+ {'prompt':'You need to find a pattern in text without rechecking characters that already matched. What does the KMP prefix table tell you?','options':['How far the pattern can shift while preserving a matched prefix','The alphabetically next character','The number of occurrences in a sorted list','The longest suffix of the text overall'],'answer':'How far the pattern can shift while preserving a matched prefix','explanation':'The table reuses the longest proper prefix that is also a suffix after a mismatch, avoiding a restart from zero.'},
+ {'prompt':'A rolling-hash substring search reports a possible match. What must you do to guarantee correctness?','options':['Compare the actual substring after a hash match','Assume equal hashes always mean equal strings','Sort both strings','Restart the search from the beginning'],'answer':'Compare the actual substring after a hash match','explanation':'Different strings can collide under a finite hash, so verifying candidate matches prevents a collision from becoming a false answer.'},
+ {'prompt':'You need the longest palindromic substring in linear time. Which stronger technique reuses information from earlier centers?','options':['Maintain the rightmost known palindrome and mirror radii around its center','Try every substring independently','Sort characters by frequency','Use BFS over all substrings'],'answer':'Maintain the rightmost known palindrome and mirror radii around its center','explanation':'Manacher’s method initializes a new center from its mirrored radius inside the current boundary, then expands only beyond known territory.'},
+ {'prompt':'Every value appears twice except one, and the values can be XORed. Why does XOR reveal the single value?','options':['Equal pairs cancel because x XOR x is zero','XOR sorts values by size','The largest value always remains','XOR counts how many values are odd'],'answer':'Equal pairs cancel because x XOR x is zero','explanation':'XOR is associative and commutative, so all duplicate pairs cancel and leave the unpaired value.'},
+ {'prompt':'You need to generate every subset of a small set of n items. What does each n-bit mask represent?','options':['Which items are included in one subset','The sorted order of all items','A path through a graph','The frequency of each item'],'answer':'Which items are included in one subset','explanation':'Each bit independently records whether its item is present, giving one mask for each of the 2^n subsets.'},
+ {'prompt':'You need all unique triples summing to a target in an array. After sorting and fixing one value, what reduces the search?','options':['Use two pointers and skip equal values after recording a triple','Try every remaining triple with three loops','Use a stack of prefixes','Binary-search every possible pair separately'],'answer':'Use two pointers and skip equal values after recording a triple','explanation':'Sorted order lets the left or right pointer move according to whether the sum is too small or too large; skipping duplicates avoids repeated triples.'}
+],
 'probability':[
  {'prompt':'A fair coin is tossed twice. What is the probability of exactly one head?','options':['1/4','1/2','3/4','1'],'answer':'1/2','explanation':'HT and TH are 2 of the 4 equally likely outcomes.'},
  {'prompt':'A fair six-sided die is rolled. What is the probability of getting a prime number?','options':['1/3','1/2','2/3','5/6'],'answer':'1/2','explanation':'The prime faces are 2, 3 and 5: three of six.'},
@@ -339,7 +370,18 @@ QUESTIONS={
  {'prompt':'A card is drawn from a standard deck. Probability it is an ace?','options':['1/52','1/26','1/13','1/4'],'answer':'1/13','explanation':'There are 4 aces among 52 cards.'},
  {'prompt':'If an event has probability 0.7, what is the probability it does not occur?','options':['0.2','0.3','0.7','1.7'],'answer':'0.3','explanation':'Complement probability is 1 - 0.7.'},
  {'prompt':'A fair die is rolled twice. Probability of getting at least one 6?','options':['1/6','5/18','11/36','1/3'],'answer':'11/36','explanation':'1 - P(no six) = 1 - (5/6)^2 = 11/36.'},
- {'prompt':'The expected value of a fair six-sided die roll is?','options':['3','3.5','4','4.5'],'answer':'3.5','explanation':'(1+2+3+4+5+6)/6 = 3.5.'}],
+ {'prompt':'The expected value of a fair six-sided die roll is?','options':['3','3.5','4','4.5'],'answer':'3.5','explanation':'(1+2+3+4+5+6)/6 = 3.5.'},
+ {'prompt':'Three fair coins are tossed. What is the probability of exactly two heads?','options':['1/8','1/4','3/8','1/2'],'answer':'3/8','explanation':'There are three outcomes with exactly two heads among eight equally likely sequences.'},
+ {'prompt':'A card is drawn from a standard deck. What is the probability it is a heart or a king?','options':['4/13','15/52','17/52','1/3'],'answer':'4/13','explanation':'There are 13 hearts and 4 kings, but the king of hearts is counted twice, giving 16/52 = 4/13.'},
+ {'prompt':'A bag has 3 red and 2 blue balls. Two are drawn without replacement. What is the probability both are red?','options':['1/5','3/10','2/5','1/2'],'answer':'3/10','explanation':'The chance is (3/5) × (2/4) = 3/10.'},
+ {'prompt':'A fair coin is tossed four times. What is the probability of at least one tail?','options':['1/16','7/8','15/16','1/2'],'answer':'15/16','explanation':'Use the complement: only one outcome has no tails, so the probability is 1 - 1/16.'},
+ {'prompt':'A fair die is rolled. Given that the result is even, what is the probability it is greater than 3?','options':['1/3','1/2','2/3','1'],'answer':'2/3','explanation':'The even outcomes are 2, 4, and 6; two of these are greater than 3.'},
+ {'prompt':'A box contains 4 green and 6 yellow tokens. One token is chosen, replaced, then another is chosen. What is the probability both are green?','options':['2/25','4/25','1/5','4/10'],'answer':'4/25','explanation':'Replacement keeps the draws independent, so multiply (4/10) × (4/10).'},
+ {'prompt':'A game pays 10 points with probability 1/4 and 0 points otherwise. What is its expected score?','options':['2.5','4','5','10'],'answer':'2.5','explanation':'Expected value is 10 × 1/4 + 0 × 3/4 = 2.5.'},
+ {'prompt':'Two fair dice are rolled. What is the probability the sum is at least 10?','options':['1/12','1/6','1/4','1/3'],'answer':'1/6','explanation':'Sums 10, 11, and 12 have 3, 2, and 1 outcomes, for 6 of 36 total.'},
+ {'prompt':'A number is chosen uniformly from 1 through 20. What is the probability it is divisible by 3?','options':['1/5','3/10','1/3','7/20'],'answer':'3/10','explanation':'The six qualifying numbers are 3, 6, 9, 12, 15, and 18, so 6/20 = 3/10.'},
+ {'prompt':'Two cards are drawn without replacement from a standard deck. What is the probability both are aces?','options':['1/169','1/221','1/52','1/13'],'answer':'1/221','explanation':'The probability is (4/52) × (3/51) = 1/221.'},
+ {'prompt':'Events A and B are mutually exclusive, with probabilities 0.2 and 0.35. What is P(A or B)?','options':['0.07','0.15','0.55','0.7'],'answer':'0.55','explanation':'Mutually exclusive events cannot happen together, so add their probabilities.'}],
 'logic':[
  {'prompt':'You have 8 identical-looking balls; one is heavier. Minimum balance-scale weighings needed to guarantee finding it?','options':['1','2','3','4'],'answer':'2','explanation':'Split 3-3; then weigh 1-1 within the heavier group (or remaining pair).'},
  {'prompt':'A farmer has 17 sheep. All but 9 run away. How many remain?','options':['8','9','17','0'],'answer':'9','explanation':'“All but 9” means 9 remain.'},
@@ -350,7 +392,18 @@ QUESTIONS={
  {'prompt':'Which number is the odd one out: 16, 25, 36, 49, 63?','options':['16','25','49','63'],'answer':'63','explanation':'The others are perfect squares.'},
  {'prompt':'A room has 4 corners. A cat sits in each corner. Each cat sees 3 cats. How many cats?','options':['4','8','12','16'],'answer':'4','explanation':'Each of the four cats sees the other three.'},
  {'prompt':'If yesterday was Monday, what day is the day after tomorrow?','options':['Tuesday','Wednesday','Thursday','Friday'],'answer':'Thursday','explanation':'Yesterday Monday means today Tuesday; day after tomorrow is Thursday.'},
- {'prompt':'A bat and ball cost $1.10 total. The bat costs $1 more than the ball. Ball cost?','options':['$0.05','$0.10','$0.15','$0.20'],'answer':'$0.05','explanation':'Ball is 5 cents; bat is $1.05.'}],
+ {'prompt':'A bat and ball cost $1.10 total. The bat costs $1 more than the ball. Ball cost?','options':['$0.05','$0.10','$0.15','$0.20'],'answer':'$0.05','explanation':'Ball is 5 cents; bat is $1.05.'},
+ {'prompt':'What comes next in the sequence 1, 1, 2, 3, 5, 8, ...?','options':['11','12','13','15'],'answer':'13','explanation':'Each term is the sum of the two preceding terms.'},
+ {'prompt':'Five people each shake hands with every other person once. How many handshakes occur?','options':['5','8','10','20'],'answer':'10','explanation':'Each handshake is a pair, so there are 5 × 4 / 2 = 10 pairs.'},
+ {'prompt':'A farmer has 12 cows. All but 5 leave the field. How many stay?','options':['5','7','12','0'],'answer':'5','explanation':'“All but 5” means five remain.'},
+ {'prompt':'A clock takes 5 seconds to strike 6 times. At the same pace, how long does it take to strike 12 times?','options':['10 seconds','11 seconds','12 seconds','15 seconds'],'answer':'11 seconds','explanation':'Six strikes have five gaps. Twelve strikes have eleven gaps, each one second long.'},
+ {'prompt':'A number is doubled, then 6 is added, giving 20. What was the original number?','options':['5','6','7','8'],'answer':'7','explanation':'Undo the addition and doubling: (20 - 6) / 2 = 7.'},
+ {'prompt':'A snail climbs a 10-meter pole. Each day it climbs 3 meters and each night slips 2 meters. On which day does it reach the top?','options':['Day 7','Day 8','Day 9','Day 10'],'answer':'Day 8','explanation':'After seven nights it is at 7 meters; on day eight it climbs the remaining 3 meters and does not slide back.'},
+ {'prompt':'What is the smaller angle between clock hands at 6:00?','options':['90°','120°','180°','360°'],'answer':'180°','explanation':'At 6:00 the hands point in opposite directions.'},
+ {'prompt':'A two-digit number has digits that sum to 9. Reversing its digits makes it 27 larger. What is the original number?','options':['36','45','54','63'],'answer':'36','explanation':'The digits differ by 3 and sum to 9, so they are 3 and 6; reversing 36 gives 63, which is 27 larger.'},
+ {'prompt':'Three boxes are labeled Apples, Oranges, and Mixed, but every label is wrong. Which box should you sample from first to identify all boxes?','options':['The box labeled Mixed','The box labeled Apples','The box labeled Oranges','Any box; labels are not useful'],'answer':'The box labeled Mixed','explanation':'Since its label is wrong, that box contains only one fruit type. One sample identifies it, and the other two follow by elimination.'},
+ {'prompt':'A snail is at the bottom of a 6-meter well. It climbs 2 meters by day and slips 1 meter by night. On which day does it get out?','options':['Day 4','Day 5','Day 6','Day 7'],'answer':'Day 5','explanation':'After four nights it is at 4 meters; on day five it climbs the final 2 meters and exits.'},
+ {'prompt':'What is the next number: 2, 5, 10, 17, 26, ...?','options':['35','36','37','38'],'answer':'37','explanation':'The differences are 3, 5, 7, and 9; the next difference is 11.'}],
 'quant':[
  {'prompt':'What is 15% of 240?','options':['24','30','36','40'],'answer':'36','explanation':'0.15 × 240 = 36.'},
  {'prompt':'An asset rises 20% then falls 20%. Net change?','options':['No change','4% decrease','4% increase','2% decrease'],'answer':'4% decrease','explanation':'1.2 × 0.8 = 0.96, a 4% loss.'},
@@ -361,11 +414,22 @@ QUESTIONS={
  {'prompt':'A price of 800 is discounted by 25%. Sale price?','options':['550','575','600','650'],'answer':'600','explanation':'75% of 800 is 600.'},
  {'prompt':'What is the median of 2, 5, 9, 12, 20?','options':['5','9','10','12'],'answer':'9','explanation':'The middle value in sorted order is 9.'},
  {'prompt':'A value doubles in 3 years at compound growth. What is its total percentage increase?','options':['50%','100%','150%','200%'],'answer':'100%','explanation':'Doubling means the final value is twice the initial value.'},
- {'prompt':'If 8 workers finish a task in 6 days, how many days for 12 equally productive workers?','options':['3','4','5','9'],'answer':'4','explanation':'Work is 48 worker-days; 48/12 = 4 days.'}]
+ {'prompt':'If 8 workers finish a task in 6 days, how many days for 12 equally productive workers?','options':['3','4','5','9'],'answer':'4','explanation':'Work is 48 worker-days; 48/12 = 4 days.'},
+ {'prompt':'A product costs 500 before tax. A 10% tax is added. What is the total price?','options':['510','540','550','600'],'answer':'550','explanation':'Ten percent of 500 is 50, so the total is 550.'},
+ {'prompt':'What is the simple interest on 2,000 at 5% per year for 3 years?','options':['100','250','300','350'],'answer':'300','explanation':'Simple interest is principal × rate × time = 2000 × 0.05 × 3.'},
+ {'prompt':'A ratio is 2:3 and the total is 45. What is the larger share?','options':['18','24','27','30'],'answer':'27','explanation':'There are five parts, each worth 9; the larger share is 3 × 9.'},
+ {'prompt':'A car travels at 72 km/h for 2.5 hours. How far does it travel?','options':['144 km','160 km','180 km','200 km'],'answer':'180 km','explanation':'Distance equals speed times time: 72 × 2.5 = 180.'},
+ {'prompt':'A rectangle has perimeter 30 and length 9. What is its width?','options':['5','6','7','12'],'answer':'6','explanation':'Two lengths and two widths total 30, so the width is (30 - 18) / 2 = 6.'},
+ {'prompt':'A quantity increases from 80 to 100. What is the percentage increase?','options':['20%','25%','30%','80%'],'answer':'25%','explanation':'The increase is 20, which is 20/80 = 25% of the starting value.'},
+ {'prompt':'The average of 6, 8, and x is 10. What is x?','options':['12','14','16','18'],'answer':'16','explanation':'The three values must total 30, so x = 30 - 6 - 8 = 16.'},
+ {'prompt':'A fair die is rolled 60 times. What is the expected number of sixes?','options':['6','10','12','15'],'answer':'10','explanation':'Each roll has a 1/6 chance of six, so the expected count is 60 × 1/6.'},
+ {'prompt':'A tank is 3/5 full. After adding 20 liters it is full. What is the tank capacity?','options':['40 liters','45 liters','50 liters','60 liters'],'answer':'50 liters','explanation':'The added 20 liters fills the remaining 2/5, so the full tank holds 20 × 5/2 = 50 liters.'},
+ {'prompt':'A shirt marked 1,200 is discounted by 15%. What is the sale price?','options':['960','1,000','1,020','1,080'],'answer':'1,020','explanation':'The discount is 180, leaving 1,020 to pay.'}]
 }
 ARENAS=set(QUESTIONS.keys())
 
-DSA_DIFFICULTIES=[7,5,4,3,1,6,3,7,8,4,2,6,4,3,4,4,3,1,1,2,4,5,5,1,5,6,5,4,5,6,7,8,5,4,3,7,7,9,9,6,9,10]
+DSA_DIFFICULTIES=[7,5,4,3,1,6,3,7,8,4,2,6,4,3,4,4,3,1,1,2,4,5,5,1,5,6,5,4,5,6,7,8,5,4,3,7,7,9,9,6,9,10,
+                  3,4,4,1,3,3,3,2,4,5,5,6,6,5,7,6,5,3,3,7,5,9,6,7,7,6,8,3,4,4]
 if len(DSA_DIFFICULTIES) != len(QUESTIONS['dsa']):
     raise RuntimeError('Every DSA question must have a difficulty rating')
 for question, difficulty in zip(QUESTIONS['dsa'], DSA_DIFFICULTIES):
@@ -378,26 +442,40 @@ def difficulty_for_rating(rating):
 
 def questions_for_match(m, rating):
     questions=QUESTIONS[m.arena]
+    # Match IDs give both players the same randomized questions and options while
+    # producing a different draw and order for each new match.
+    rng=random.Random(f'{m.id}:{m.arena}')
     if m.arena == 'dsa' and len(questions) > 10:
-        # Take the closest difficulty levels first. The match seed keeps the set and
-        # order identical for both players without adding question storage to the DB.
         target=difficulty_for_rating(rating)
-        rng=random.Random(f'{m.id}:{target}')
         by_level={level:[] for level in range(1,11)}
         for question in questions:
             by_level[question['difficulty']].append(question)
         for group in by_level.values():
             rng.shuffle(group)
-        levels=list(by_level)
-        rng.shuffle(levels)
-        levels.sort(key=lambda level:abs(level-target))
         selected=[]
-        for level in levels:
-            selected.extend(by_level[level][:10-len(selected)])
-            if len(selected)==10:
-                break
-        return selected
-    return questions
+        levels=sorted(by_level, key=lambda level:abs(level-target))
+        index=0
+        while len(selected)<10 and index<len(levels):
+            distance=abs(levels[index]-target)
+            nearest=[]
+            while index<len(levels) and abs(levels[index]-target)==distance:
+                nearest.append(levels[index]); index+=1
+            rng.shuffle(nearest)
+            for level in nearest:
+                selected.extend(by_level[level][:10-len(selected)])
+                if len(selected)==10:
+                    break
+        questions=selected
+    else:
+        questions=list(questions)
+    rng.shuffle(questions)
+    randomized=[]
+    for question in questions[:10]:
+        item=dict(question)
+        item['options']=list(question['options'])
+        rng.shuffle(item['options'])
+        randomized.append(item)
+    return randomized
 
 def question_rating_for_match(player1, player2):
     if player1.username == 'MindClash_AI':
@@ -684,11 +762,26 @@ async def run_bot_match(match_id, bot_id, player_rating):
     """A lightweight practice opponent. It solves at a rating-adjusted pace; no LLM/API key needed."""
     accuracy=max(0.35,min(0.82,0.58+(player_rating-1000)/2500))
     while True:
-        await asyncio.sleep(random.randint(6,11))
+        lookup=SessionLocal()
+        try:
+            pending=lookup.get(Match,match_id)
+            if not pending or pending.status!='active' or pending.current_question>=10: return
+            question_index=pending.current_question
+            player1=lookup.get(User,pending.player1); player2=lookup.get(User,pending.player2)
+            match_rating=question_rating_for_match(player1,player2)
+            question=questions_for_match(pending,match_rating)[question_index]
+            difficulty=question.get('difficulty',3)
+        finally:
+            lookup.close()
+        # The bot pauses to "think"; harder DSA questions add a little extra time.
+        await asyncio.sleep(random.uniform(12,22)+max(0,difficulty-3)*0.75)
         session=SessionLocal()
         try:
             m=session.get(Match,match_id)
             if not m or m.status!='active': return
+            # If the player advanced while the bot was thinking, start a fresh delay
+            # for the new question instead of answering it immediately.
+            if m.current_question!=question_index: continue
             if expire_idle_match(m, session):
                 clear_active_markers(m.player1, m.player2)
                 await manager.publish(m, session)
